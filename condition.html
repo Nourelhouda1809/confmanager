@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConfManager - Conditions générales</title>
+    <!-- mêmes polices & icônes que la plateforme -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #003366;
+            --primary-light: #005599;
+            --primary-dark: #002244;
+            --secondary: #D4AF37;
+            --secondary-light: #F9F5E8;
+            --secondary-dark: #B49129;
+            --text-dark: #1A1A1A;
+            --text-muted: #4A5568;
+            --bg-light: #F5F5F5;
+            --bg-navy: #E6F0FA;
+            --white: #FFFFFF;
+            --shadow: 0 4px 24px rgba(0, 51, 102, 0.08);
+            --shadow-hover: 0 12px 40px rgba(0, 51, 102, 0.2);
+            --radius: 0.625rem;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1.5rem;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* éléments décoratifs */
+        body::before {
+            content: '';
+            position: absolute;
+            top: -20%;
+            left: -10%;
+            width: 600px;
+            height: 600px;
+            background: rgba(212, 175, 55, 0.15);
+            border-radius: 50%;
+            filter: blur(100px);
+            z-index: 0;
+        }
+
+        body::after {
+            content: '';
+            position: absolute;
+            bottom: -20%;
+            right: -10%;
+            width: 600px;
+            height: 600px;
+            background: rgba(212, 175, 55, 0.15);
+            border-radius: 50%;
+            filter: blur(100px);
+            z-index: 0;
+        }
+
+        .terms-container {
+            width: 100%;
+            max-width: 900px;
+            position: relative;
+            z-index: 10;
+            animation: slideUp 0.6s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Carte principale */
+        .terms-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(12px);
+            border-radius: 1.5rem;
+            padding: 2.5rem 2.5rem;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(212, 175, 55, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Entête */
+        .terms-header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+            border-bottom: 2px solid var(--secondary-light);
+            padding-bottom: 1.5rem;
+        }
+
+        .logo-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            width: 50px;
+            height: 50px;
+            background: var(--primary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 51, 102, 0.3);
+        }
+
+        .logo-text {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: -0.5px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.3rem 1rem;
+            background: var(--secondary-light);
+            color: var(--primary-dark);
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 2rem;
+            margin-bottom: 1.2rem;
+            border: 1px solid var(--secondary);
+        }
+
+        h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--primary-dark);
+            margin-bottom: 0.5rem;
+        }
+
+        .last-update {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        /* Sommaire */
+        .summary {
+            background: var(--bg-navy);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--secondary);
+        }
+
+        .summary h3 {
+            color: var(--primary);
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .summary ul {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.8rem;
+            list-style: none;
+        }
+
+        .summary li a {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: color 0.2s;
+        }
+
+        .summary li a:hover {
+            color: var(--secondary-dark);
+            text-decoration: underline;
+        }
+
+        .summary li i {
+            color: var(--secondary);
+            font-size: 0.8rem;
+        }
+
+        /* Contenu des conditions */
+        .terms-content {
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 1rem;
+            margin-bottom: 2rem;
+            scroll-behavior: smooth;
+        }
+
+        .terms-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terms-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        .terms-content::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 10px;
+        }
+
+        .terms-content::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-dark);
+        }
+
+        .chapter {
+            margin-bottom: 2rem;
+            scroll-margin-top: 1rem;
+        }
+
+        .chapter h2 {
+            font-family: 'Playfair Display', serif;
+            color: var(--primary);
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--secondary-light);
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .chapter h2 i {
+            color: var(--secondary);
+            font-size: 1.3rem;
+        }
+
+        .chapter h3 {
+            color: var(--primary-dark);
+            font-size: 1.2rem;
+            margin: 1.2rem 0 0.8rem;
+            font-weight: 600;
+        }
+
+        .chapter p {
+            color: var(--text-dark);
+            line-height: 1.7;
+            margin-bottom: 1rem;
+        }
+
+        .chapter ul, .chapter ol {
+            margin: 1rem 0 1rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .chapter li {
+            margin-bottom: 0.5rem;
+        }
+
+        .highlight {
+            background: var(--secondary-light);
+            padding: 1.2rem;
+            border-radius: 0.8rem;
+            border-left: 4px solid var(--secondary);
+            margin: 1.2rem 0;
+        }
+
+        .highlight p:last-child {
+            margin-bottom: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.95rem;
+        }
+
+        th {
+            background: var(--primary);
+            color: white;
+            padding: 0.8rem;
+            text-align: left;
+        }
+
+        td {
+            padding: 0.8rem;
+            border-bottom: 1px solid #E2E8F0;
+        }
+
+        tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        /* Actions */
+        .terms-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid var(--secondary-light);
+        }
+
+        .btn {
+            padding: 1rem 2rem;
+            border-radius: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            font-size: 1rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 51, 102, 0.2);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 51, 102, 0.3);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-navy);
+            transform: translateY(-2px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        .btn-outline:hover {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* retour */
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--secondary);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .terms-card {
+                padding: 1.8rem 1.2rem;
+            }
+            h1 {
+                font-size: 1.8rem;
+            }
+            .summary ul {
+                grid-template-columns: 1fr;
+            }
+            .terms-actions {
+                flex-direction: column;
+            }
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="terms-container">
+        <!-- lien retour -->
+        <a href="signup.php" class="back-link" onclick="history.back(); return ;">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
+
+        <div class="terms-card">
+            <!-- En-tête -->
+            <div class="terms-header">
+                <div class="logo-wrapper">
+                    <div class="logo-icon">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                    <span class="logo-text">ConfManager</span>
+                </div>
+                <span class="badge">Plateforme Algérienne</span>
+                <h1>Conditions Générales d'Utilisation</h1>
+                <div class="last-update">
+                    <i class="fas fa-calendar-alt"></i>
+                    <span>Dernière mise à jour : 28 février 2026</span>
+                </div>
+            </div>
+
+            <!-- Sommaire cliquable -->
+            <div class="summary">
+                <h3><i class="fas fa-list"></i> Sommaire</h3>
+                <ul>
+                    <li><a href="#chap1"><i class="fas fa-chevron-right"></i> Chapitre 1 : Objet et acceptation</a></li>
+                    <li><a href="#chap2"><i class="fas fa-chevron-right"></i> Chapitre 2 : Définitions</a></li>
+                    <li><a href="#chap3"><i class="fas fa-chevron-right"></i> Chapitre 3 : Inscription et comptes</a></li>
+                    <li><a href="#chap4"><i class="fas fa-chevron-right"></i> Chapitre 4 : Soumission d'articles</a></li>
+                    <li><a href="#chap5"><i class="fas fa-chevron-right"></i> Chapitre 5 : Évaluation par les pairs</a></li>
+                    <li><a href="#chap6"><i class="fas fa-chevron-right"></i> Chapitre 6 : Propriété intellectuelle</a></li>
+                    <li><a href="#chap7"><i class="fas fa-chevron-right"></i> Chapitre 7 : Protection des données</a></li>
+                    <li><a href="#chap8"><i class="fas fa-chevron-right"></i> Chapitre 8 : Responsabilités</a></li>
+                    <li><a href="#chap9"><i class="fas fa-chevron-right"></i> Chapitre 9 : Modération et suspension</a></li>
+                    <li><a href="#chap10"><i class="fas fa-chevron-right"></i> Chapitre 10 : Dispositions finales</a></li>
+                </ul>
+            </div>
+
+            <!-- Contenu des conditions (scrollable) -->
+            <div class="terms-content">
+                <!-- Chapitre 1 -->
+                <section id="chap1" class="chapter">
+                    <h2><i class="fas fa-file-contract"></i> Chapitre 1 : Objet et acceptation</h2>
+                    <p>Les présentes Conditions Générales d'Utilisation (ci-après "CGU") ont pour objet de définir les modalités et conditions d'utilisation de la plateforme ConfManager (ci-après "la Plateforme"), éditée par l'Université Hassiba Benbouali de Chlef, Faculté des Sciences Exactes et Informatique.</p>
+                    <p>L'accès et l'utilisation de la Plateforme impliquent l'acceptation sans réserve des présentes CGU par l'Utilisateur. Si l'Utilisateur n'accepte pas ces conditions, il ne doit pas utiliser la Plateforme.</p>
+                    <div class="highlight">
+                        <p><i class="fas fa-gavel"></i> <strong>Article 1.1 :</strong> La Plateforme est accessible aux chercheurs, enseignants-chercheurs, doctorants, organisateurs de conférences et toute personne physique ou morale participant à la gestion ou à la consultation d'articles scientifiques dans le cadre de conférences nationales et internationales.</p>
+                    </div>
+                </section>
+
+                <!-- Chapitre 2 -->
+                <section id="chap2" class="chapter">
+                    <h2><i class="fas fa-book"></i> Chapitre 2 : Définitions</h2>
+                    <p>Dans les présentes CGU, les termes suivants sont définis comme suit :</p>
+                    <ul>
+                        <li><strong>Plateforme :</strong> Désigne le site web ConfManager accessible depuis l'URL officielle, ainsi que toutes ses fonctionnalités.</li>
+                        <li><strong>Utilisateur :</strong> Toute personne physique ou morale utilisant la Plateforme, qu'il s'agisse d'un chercheur, auteur, évaluateur, organisateur ou administrateur.</li>
+                        <li><strong>Compte :</strong> Espace personnel créé par l'Utilisateur pour accéder aux services de la Plateforme.</li>
+                        <li><strong>Article :</strong> Document scientifique soumis via la Plateforme dans le cadre d'une conférence.</li>
+                        <li><strong>Conférence :</strong> Événement scientifique organisé par une institution partenaire et référencé sur la Plateforme.</li>
+                        <li><strong>Contenu :</strong> Toutes informations, données, textes, fichiers, images, vidéos publiés sur la Plateforme.</li>
+                    </ul>
+                </section>
+
+                <!-- Chapitre 3 -->
+                <section id="chap3" class="chapter">
+                    <h2><i class="fas fa-user-plus"></i> Chapitre 3 : Inscription et gestion des comptes</h2>
+                    <h3>3.1 Création de compte</h3>
+                    <p>L'inscription est gratuite et ouverte à toute personne physique justifiant d'une affiliation à une institution de recherche ou d'enseignement supérieur. L'Utilisateur s'engage à fournir des informations exactes, complètes et à jour lors de son inscription.</p>
+                    
+                    <h3>3.2 Types de comptes</h3>
+                    <table>
+                        <tr><th>Type de compte</th><th>Rôle</th><th>Privilèges</th></tr>
+                        <tr><td>Chercheur</td><td>Soumission et consultation d'articles</td><td>Soumettre, consulter, être évaluateur</td></tr>
+                        <tr><td>Organisateur</td><td>Gestion de conférences</td><td>Créer des conférences, assigner des évaluateurs, gérer les soumissions</td></tr>
+                        <tr><td>reviewer</td><td>évaluation  des article </td><td>evaluer article, soumettre rapport, accepter/refuser revission</td></tr>
+                    </table>
+
+                    <h3>3.3 Sécurité du compte</h3>
+                    <p>L'Utilisateur est responsable de la confidentialité de ses identifiants et de toutes les activités effectuées depuis son compte. En cas de perte ou d'utilisation frauduleuse, l'Utilisateur doit en informer immédiatement l'équipe ConfManager.</p>
+                </section>
+
+                <!-- Chapitre 4 -->
+                <section id="chap4" class="chapter">
+                    <h2><i class="fas fa-upload"></i> Chapitre 4 : Soumission d'articles</h2>
+                    <h3>4.1 Conditions de soumission</h3>
+                    <p>L'Utilisateur garantit que l'article soumis est son œuvre originale ou qu'il dispose des droits nécessaires à sa publication. L'article ne doit pas contenir de propos diffamatoires, illicites, ou contraires à l'éthique scientifique.</p>
+                    
+                    <h3>4.2 Format et délais</h3>
+                    <p>Les articles doivent respecter le format et les consignes de chaque conférence. Les délais de soumission sont impératifs ; passé ces délais, le comité d'organisation peut refuser la soumission.</p>
+
+                    <h3>4.3 Frais de soumission</h3>
+                    <p>Certaines conférences peuvent facturer des frais de soumission ou d'inscription. Ces frais sont clairement indiqués sur la page de la conférence et sont à la charge de l'auteur.</p>
+                </section>
+
+                <!-- Chapitre 5 -->
+                <section id="chap5" class="chapter">
+                    <h2><i class="fas fa-balance-scale"></i> Chapitre 5 : Processus d'évaluation par les pairs</h2>
+                    <p>La Plateforme met en œuvre un processus d'évaluation par les pairs (peer review) pour garantir la qualité scientifique des articles.</p>
+                    <ul>
+                        <li><strong>Évaluation en simple ou double aveugle :</strong> selon les règles définies par chaque conférence.</li>
+                        <li><strong>Critères d'évaluation :</strong> originalité, rigueur méthodologique, pertinence, clarté.</li>
+                        <li><strong>Délai d'évaluation :</strong> les évaluateurs s'engagent à rendre leur avis dans les délais impartis (généralement 4 à 6 semaines).</li>
+                        <li><strong>Conflits d'intérêts :</strong> tout évaluateur doit signaler un éventuel conflit d'intérêts et se récuser si nécessaire.</li>
+                    </ul>
+                    <div class="highlight">
+                        <p><i class="fas fa-info-circle"></i> Les décisions des comités scientifiques sont souveraines et sans appel. Les auteurs reçoivent les commentaires des évaluateurs de manière anonyme.</p>
+                    </div>
+                </section>
+
+                <!-- Chapitre 6 -->
+                <section id="chap6" class="chapter">
+                    <h2><i class="fas fa-copyright"></i> Chapitre 6 : Propriété intellectuelle</h2>
+                    <h3>6.1 Droits des auteurs</h3>
+                    <p>Les auteurs conservent l'intégralité de leurs droits d'auteur sur les articles soumis. En soumettant un article, l'auteur accorde à la Plateforme une licence non exclusive de diffusion dans le cadre de la conférence concernée (programme, recueil des actes, site web).</p>
+                    
+                    <h3>6.2 Droits de la Plateforme</h3>
+                    <p>La Plateforme est propriétaire de son code, de sa base de données et de son contenu éditorial (hors articles). Toute reproduction ou utilisation sans autorisation est interdite.</p>
+
+                    <h3>6.3 Contenu des utilisateurs</h3>
+                    <p>L'Utilisateur garantit que le contenu qu'il publie ne viole aucun droit de tiers. En cas de réclamation, l'Utilisateur s'engage à collaborer pour résoudre le litige.</p>
+                </section>
+
+                <!-- Chapitre 7 -->
+                <section id="chap7" class="chapter">
+                    <h2><i class="fas fa-shield-alt"></i> Chapitre 7 : Protection des données personnelles</h2>
+                    <p>Conformément à la loi algérienne n° 18-07 relative à la protection des personnes physiques dans le traitement des données à caractère personnel, et au Règlement Général sur la Protection des Données (RGPD) pour les utilisateurs européens, la Plateforme s'engage à :</p>
+                    <ul>
+                        <li>Collecter uniquement les données nécessaires (nom, email, affiliation, etc.)</li>
+                        <li>Ne pas vendre ou louer les données à des tiers</li>
+                        <li>Permettre aux utilisateurs d'accéder, rectifier ou supprimer leurs données</li>
+                        <li>Sécuriser les données par des mesures techniques (chiffrement, accès restreint)</li>
+                    </ul>
+                    <p>Les données sont conservées pendant la durée de l'utilisation active du compte, puis archivées conformément aux obligations légales.</p>
+                    <p><strong>Cookies :</strong> La Plateforme utilise des cookies de session pour améliorer l'expérience utilisateur. L'Utilisateur peut paramétrer ses préférences dans son navigateur.</p>
+                </section>
+
+                <!-- Chapitre 8 -->
+                <section id="chap8" class="chapter">
+                    <h2><i class="fas fa-exclamation-triangle"></i> Chapitre 8 : Responsabilités</h2>
+                    <h3>8.1 Responsabilité de la Plateforme</h3>
+                    <p>La Plateforme s'efforce d'assurer la disponibilité et la sécurité du service, mais ne peut garantir une absence totale d'interruptions ou d'erreurs. La responsabilité de la Plateforme ne peut être engagée en cas de force majeure, de fait d'un tiers, ou de dommages indirects.</p>
+
+                    <h3>8.2 Responsabilité de l'Utilisateur</h3>
+                    <p>L'Utilisateur est seul responsable de l'utilisation qu'il fait de la Plateforme et des conséquences qui en découlent. Il s'engage à ne pas porter atteinte à l'intégrité de la Plateforme (intrusion, injection de code, etc.).</p>
+
+                    <h3>8.3 Liens externes</h3>
+                    <p>La Plateforme peut contenir des liens vers des sites tiers. La Plateforme n'exerce aucun contrôle sur ces sites et décline toute responsabilité quant à leur contenu.</p>
+                </section>
+
+                <!-- Chapitre 9 -->
+                <section id="chap9" class="chapter">
+                    <h2><i class="fas fa-ban"></i> Chapitre 9 : Modération et suspension</h2>
+                    <p>La Plateforme se réserve le droit de supprimer tout contenu contraire aux présentes CGU ou à la législation en vigueur, et de suspendre ou résilier un compte en cas de manquement grave, notamment :</p>
+                    <ul>
+                        <li>Plagiat ou fraude scientifique avérée</li>
+                        <li>Publication de contenu illicite (discours de haine, incitation à la violence)</li>
+                        <li>Tentative de piratage ou de déstabilisation de la Plateforme</li>
+                        <li>Usurpation d'identité</li>
+                    </ul>
+                    <p>L'Utilisateur concerné sera informé par email et pourra présenter ses observations. La décision de suspension est motivée et peut faire l'objet d'un recours auprès de l'équipe éditoriale.</p>
+                </section>
+
+                <!-- Chapitre 10 -->
+                <section id="chap10" class="chapter">
+                    <h2><i class="fas fa-scale-balanced"></i> Chapitre 10 : Dispositions finales</h2>
+                    <h3>10.1 Modification des CGU</h3>
+                    <p>La Plateforme se réserve le droit de modifier les présentes CGU à tout moment. Les utilisateurs seront informés par email et devront accepter les nouvelles conditions pour continuer à utiliser le service.</p>
+
+                    <h3>10.2 Droit applicable et juridiction</h3>
+                    <p>Les présentes CGU sont régies par le droit algérien. Tout litige relatif à leur interprétation ou exécution relève de la compétence exclusive des tribunaux de Chlef, sauf disposition impérative contraire.</p>
+
+                    <h3>10.3 Contact</h3>
+                    <p>Pour toute question relative aux CGU, vous pouvez contacter le Délégué à la Protection des Données à l'adresse : <a href="mailto:dpo@confmanager.dz">dpo@confmanager.dz</a> ou par courrier à l'adresse de l'université.</p>
+                </section>
+
+                <!-- Note finale -->
+                <div class="highlight" style="margin-top: 2rem;">
+                    <p><i class="fas fa-heart" style="color: var(--secondary);"></i> <strong>ConfManager</strong> s'engage à promouvoir une science ouverte et éthique, au service de la communauté de recherche algérienne et internationale.</p>
+                </div>
+            </div>
+
+            <!-- Boutons d'action -->
+            <div class="terms-actions">
+                <button class="btn btn-primary" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimer / Télécharger PDF
+                </button>
+                <button class="btn btn-secondary" onclick="alert('Acceptation simulée – Merci de votre confiance !'); history.back();">
+                    <i class="fas fa-check-circle"></i> J'accepte les conditions
+                </button>
+                <button class="btn btn-outline" onclick="history.back()">
+                    <i class="fas fa-times"></i> Retour sans accepter
+                </button>
+            </div>
+
+            <div style="text-align: center; margin-top: 2rem; font-size: 0.8rem; color: #94A3B8;">
+                <i class="fas fa-map-marker-alt"></i> Université Hassiba Benbouali de Chlef – Faculté des Sciences Exactes et Informatique
+            </div>
+        </div>
+    </div>
+</body>
+</html>$

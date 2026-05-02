@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Politique de Confidentialité | ConfManager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            background-color: #1a3a5c;
+            color: white;
+            padding: 30px 0;
+            text-align: center;
+            border-bottom: 3px solid #c9a84c;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Main content */
+        .content {
+            background: white;
+            padding: 40px;
+            margin: 30px 0;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 35px;
+        }
+
+        h2 {
+            color: #1a3a5c;
+            font-size: 22px;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        h3 {
+            color: #2c5a7a;
+            font-size: 18px;
+            margin: 15px 0 10px 0;
+        }
+
+        p {
+            margin-bottom: 15px;
+            text-align: justify;
+        }
+
+        ul {
+            margin: 15px 0 15px 30px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+
+        th {
+            background-color: #1a3a5c;
+            color: white;
+            padding: 10px;
+            text-align: left;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        /* Highlight box */
+        .highlight {
+            background-color: #f0f7ff;
+            border-left: 4px solid #1a3a5c;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        /* Footer */
+        .footer {
+            background-color: #1a3a5c;
+            color: rgba(255,255,255,0.7);
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
+            margin-top: 30px;
+        }
+
+        .footer a {
+            color: #c9a84c;
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            .content {
+                padding: 20px;
+            }
+            h2 {
+                font-size: 20px;
+            }
+            table {
+                font-size: 12px;
+            }
+            th, td {
+                padding: 8px;
+            }
+        }
+
+        @media print {
+            .header, .footer {
+                background: #1a3a5c;
+                color: white;
+            }
+            .content {
+                padding: 20px;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="terms-container">
+        <!-- lien retour -->
+        <a href="signup.php" class="back-link" onclick="history.back(); return ;">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
+
+        <div class="terms-card">
+<header class="header">
+    <div class="container">
+        <h1>Politique de Confidentialité</h1>
+        <p>Version 2.0 | Dernière mise à jour : 14 mars 2026</p>
+    </div>
+</header>
+
+<main class="container">
+    <div class="content">
+        
+        <section>
+            <h2>1. Introduction</h2>
+            <p>La présente politique de confidentialité décrit la manière dont <strong>ConfManager</strong> collecte, utilise, protège et conserve vos données personnelles lorsque vous utilisez notre plateforme de gestion de conférences scientifiques.</p>
+            <p>Conformément au <strong>Règlement Général sur la Protection des Données (RGPD - UE 2016/679)</strong> et à la <strong>loi algérienne n°18-07</strong> relative à la protection des données personnelles, nous nous engageons à respecter la confidentialité et la sécurité de vos informations.</p>
+            <div class="highlight">
+                <strong> Engagement :</strong> Vos données ne seront jamais vendues à des tiers à des fins commerciales sans votre consentement explicite.
+            </div>
+        </section>
+
+        <section>
+            <h2>2. Données collectées</h2>
+            <p>Nous collectons les catégories de données suivantes :</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Catégorie</th>
+                        <th>Données concernées</th>
+                        <th>Caractère</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Identité</strong></td>
+                        <td>Nom, prénom, titre, fonction</td>
+                        <td>Obligatoire</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Coordonnées</strong></td>
+                        <td>Email, téléphone, adresse professionnelle</td>
+                        <td>Obligatoire</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Profil académique</strong></td>
+                        <td>Institution, laboratoire, spécialités, ORCID</td>
+                        <td>Optionnel</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Activité</strong></td>
+                        <td>Soumissions, évaluations, décisions</td>
+                        <td>Lié au service</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Techniques</strong></td>
+                        <td>Adresse IP, navigateur, pages visitées</td>
+                        <td>Automatique</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p><em>Note :</em> Nous ne collectons pas de données sensibles (origine raciale, opinions politiques, santé, etc.) sans votre consentement explicite.</p>
+        </section>
+
+        <section>
+            <h2>3. Finalités du traitement</h2>
+            <p>Vos données sont utilisées exclusivement pour :</p>
+            <ul>
+                <li><strong>Gestion des comptes</strong> — Création, authentification et administration de votre profil</li>
+                <li><strong>Organisation des conférences</strong> — Soumission d'articles, processus d'évaluation par les pairs</li>
+                <li><strong>Communications</strong> — Notifications, rappels d'échéances, confirmations</li>
+                <li><strong>Amélioration du service</strong> — Analyses statistiques anonymisées, optimisation</li>
+                <li><strong>Sécurité et conformité</strong> — Détection des fraudes, obligations légales</li>
+                <li><strong>Support technique</strong> — Traitement de vos demandes d'assistance</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>4. Base légale des traitements</h2>
+            <p>Chaque traitement repose sur une base légale spécifique (article 6 du RGPD) :</p>
+            <ul>
+                <li><strong>Exécution du contrat</strong> — Gestion de votre compte et fourniture des services</li>
+                <li><strong>Consentement</strong> — Communications marketing, cookies non essentiels</li>
+                <li><strong>Obligation légale</strong> — Conservation des données comptables</li>
+                <li><strong>Intérêt légitime</strong> — Sécurité, amélioration des services, prévention des fraudes</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>5. Destinataires des données</h2>
+            <p>L'accès à vos données est strictement limité :</p>
+            <ul>
+                <li><strong>Personnel autorisé de ConfManager</strong> — Uniquement les collaborateurs ayant besoin des données dans le cadre de leurs fonctions</li>
+                <li><strong>Prestataires techniques</strong> — Hébergement (OVHcloud), envoi d'emails (SendGrid), analyse (PostHog) — tous liés par des contrats de sous-traitance conformes au RGPD</li>
+                <li><strong>Organisateurs de conférences</strong> — Pour la gestion des soumissions et évaluations</li>
+                <li><strong>Autorités publiques</strong> — Sur réquisition judiciaire dûment motivée</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>6. Durées de conservation</h2>
+            <table>
+                <thead>
+                    <tr><th>Type de données</th><th>Durée de conservation</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Compte utilisateur actif</td><td>Durée de l'abonnement</td></tr>
+                    <tr><td>Compte inactif (+24 mois)</td><td>Archivage 3 ans, puis suppression</td></tr>
+                    <tr><td>Articles soumis</td><td>5 ans (archivage scientifique)</td></tr>
+                    <tr><td>Logs de connexion</td><td>12 mois</td></tr>
+                    <tr><td>Données de facturation</td><td>10 ans (obligation comptable)</td></tr>
+                    <tr><td>Cookies analytiques</td><td>13 mois maximum</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section>
+            <h2>7. Vos droits</h2>
+            <p>Conformément aux articles 15 à 22 du RGPD, vous disposez des droits suivants :</p>
+            <ul>
+                <li><strong>Droit d'accès</strong> — Obtenir la confirmation que vos données sont traitées et y accéder</li>
+                <li><strong>Droit de rectification</strong> — Faire corriger vos données inexactes</li>
+                <li><strong>Droit à l'effacement</strong> — Obtenir la suppression de vos données ("droit à l'oubli")</li>
+                <li><strong>Droit à la limitation</strong> — Restreindre le traitement de vos données</li>
+                <li><strong>Droit à la portabilité</strong> — Recevoir vos données dans un format structuré</li>
+                <li><strong>Droit d'opposition</strong> — Vous opposer au traitement de vos données (notamment marketing)</li>
+            </ul>
+            <div class="highlight">
+                <strong> Pour exercer vos droits :</strong> Contactez notre Délégué à la Protection des Données (DPO) à <strong>dpo@confmanager.com</strong>. Nous répondrons dans un délai maximum de <strong>30 jours</strong>.
+            </div>
+        </section>
+
+        <section>
+            <h2>8. Sécurité des données</h2>
+            <p>Nous mettons en œuvre des mesures techniques et organisationnelles pour protéger vos données :</p>
+            <ul>
+                <li><strong>Chiffrement TLS 1.3</strong> — Pour toutes les communications</li>
+                <li><strong>Chiffrement AES-256</strong> — Pour les données au repos</li>
+                <li><strong>Authentification multi-facteurs (2FA)</strong> — Disponible pour les comptes sensibles</li>
+                <li><strong>Contrôle d'accès strict</strong> — Principe du moindre privilège</li>
+                <li><strong>Sauvegardes quotidiennes</strong> — Avec rétention de 30 jours</li>
+                <li><strong>Audits de sécurité annuels</strong> — Par des cabinets indépendants</li>
+            </ul>
+            <p>En cas de violation de données susceptible d'engendrer un risque pour vos droits, nous vous notifierons dans les <strong>72 heures</strong> conformément à l'article 33 du RGPD.</p>
+        </section>
+
+        <section>
+            <h2>9. Cookies et traceurs</h2>
+            <p>Notre plateforme utilise différents types de cookies :</p>
+            <ul>
+                <li><strong>Cookies essentiels</strong> — Nécessaires au fonctionnement (session, sécurité). Ne peuvent pas être désactivés.</li>
+                <li><strong>Cookies fonctionnels</strong> — Mémorisent vos préférences (langue, thème)</li>
+                <li><strong>Cookies analytiques</strong> — Mesurent l'audience (anonymisés, avec consentement)</li>
+            </ul>
+            <p>Vous pouvez gérer vos préférences via les paramètres de votre navigateur ou notre panneau de consentement.</p>
+        </section>
+
+        <section>
+            <h2>10. Transferts internationaux</h2>
+            <p>Certains de nos sous-traitants peuvent être situés hors de l'UE et de l'Algérie. Dans ce cas, nous garantissons un niveau de protection adéquat via :</p>
+            <ul>
+                <li><strong>Clauses Contractuelles Types (CCT)</strong> — Approuvées par la Commission européenne</li>
+                <li><strong>Décisions d'adéquation</strong> — Pour les pays reconnus offrant une protection suffisante</li>
+            </ul>
+            <p>La liste complète de nos sous-traitants est disponible sur demande.</p>
+        </section>
+
+        <section>
+            <h2>11. Modifications de la politique</h2>
+            <p>Nous pouvons modifier cette politique pour refléter des évolutions légales ou fonctionnelles. En cas de modification substantielle :</p>
+            <ul>
+                <li>Vous serez informé par email à l'adresse associée à votre compte</li>
+                <li>Une notification sera affichée dans l'application</li>
+                <li>La date de révision sera mise à jour en haut du document</li>
+            </ul>
+            <p>Votre utilisation continue de la plateforme après notification vaut acceptation des modifications.</p>
+        </section>
+
+        <section>
+            <h2>12. Nous contacter</h2>
+            <p>Pour toute question relative à cette politique ou à l'exercice de vos droits :</p>
+            <ul>
+                <li><strong>Délégué à la Protection des Données (DPO)</strong> — <a href="mailto:dpo@confmanager.com">dpo@confmanager.com</a></li>
+                <li><strong>Service juridique</strong> — <a href="mailto:legal@confmanager.com">legal@confmanager.com</a></li>
+                <li><strong>Adresse postale</strong> — ConfManager, Université Hassiba Benbouali, Faculté des Sciences Exactes et Informatique, Chlef 02000, Algérie</li>
+                <li><strong>Téléphone</strong> — +213 (0) 562 67 95 39</li>
+            </ul>
+            <div class="highlight">
+                <strong> Délai de réponse :</strong> Nous traitons votre demande dans un délai maximum de 30 jours ouvrés.
+            </div>
+        </section>
+
+    </div>
+</main>
+
+<footer class="footer">
+    <div class="container">
+        <p>© 2026 ConfManager — Tous droits réservés</p>
+        <p>Hébergement sécurisé en France (OVHcloud) | Conforme RGPD & Loi 18-07</p>
+        <p><a href="#">Mentions légales</a> | <a href="#">Conditions générales</a> | <a href="#">Contact</a></p>
+    </div>
+</footer>
+
+</body>
+</html>
