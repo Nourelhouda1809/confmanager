@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConfManager — Décisions finales</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root {
+    --navy: #0d2137;
+    --navy-mid: #1a3a5c;
+    --gold: #c9a84c;
+    --gold-light: #e2c97e;
+    --bg: #f0f2f5;
+    --white: #ffffff;
+    --border: #e2e8f0;
+    --muted: #7a8fa6;
+    --text: #1a2e44;
+    --text-light: #4a607a;
+    --accent: #2c6fad;
+    --danger: #d94040;
+    --success: #2a9d8f;
+    --warning: #d4830a;
+    --purple: #5b6ef5;
+    --shadow-sm: 0 1px 4px rgba(13,33,55,0.07);
+    --shadow: 0 4px 20px rgba(13,33,55,0.10);
+    --shadow-md: 0 8px 32px rgba(13,33,55,0.15);
+    --radius: 8px;
+    --radius-sm: 4px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ─── TOPBAR ─── */
+  .topbar {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow-sm);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    margin-right: 48px; text-decoration: none;
+  }
+  .brand-icon {
+    width: 34px; height: 34px; background: var(--navy);
+    border-radius: 6px; display: flex; align-items: center;
+    justify-content: center; color: white; font-size: 16px;
+  }
+  .brand-name {
+    font-size: 18px; font-weight: 600; color: var(--navy); letter-spacing: -0.3px;
+  }
+  .nav-links { display: flex; align-items: center; gap: 4px; flex: 1; }
+  .nav-link {
+    padding: 8px 16px; font-size: 14px; font-weight: 400;
+    color: var(--text-light); background: none; border: none;
+    border-radius: var(--radius-sm); cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s; position: relative;
+    text-decoration: none; display: inline-block;
+  }
+  .nav-link:hover { color: var(--navy); background: var(--bg); }
+  .nav-link.active { color: var(--gold); font-weight: 500; }
+  .nav-link.active::after {
+    content: ''; position: absolute;
+    bottom: -1px; left: 16px; right: 16px;
+    height: 2px; background: var(--gold);
+    border-radius: 2px 2px 0 0;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .search-wrap { position: relative; margin-right: 8px; }
+  .search-input {
+    width: 240px; padding: 8px 14px 8px 36px;
+    border: 1px solid var(--border); border-radius: 20px;
+    font-size: 13.5px; font-family: 'DM Sans', sans-serif;
+    background: var(--bg); color: var(--text); outline: none; transition: all 0.15s;
+  }
+  .search-input::placeholder { color: var(--muted); }
+  .search-input:focus {
+    border-color: var(--accent); background: var(--white);
+    box-shadow: 0 0 0 3px rgba(44,111,173,0.10); width: 280px;
+  }
+  .search-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 13px; pointer-events: none;
+  }
+  .logout-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 18px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 13.5px; font-weight: 500; color: var(--text-light);
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s; text-decoration: none;
+  }
+  .logout-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--white); }
+
+  /* ─── PAGE ─── */
+  .page { max-width: 1400px; margin: 0 auto; padding: 40px 32px 60px; }
+  .page-header { margin-bottom: 28px; }
+  .page-header-row {
+    display: flex; align-items: flex-end;
+    justify-content: space-between; gap: 16px;
+    margin-bottom: 6px;
+  }
+  .page-header h1 {
+    font-family: 'Libre Baskerville', serif;
+    font-size: 32px; font-weight: 700;
+    color: var(--navy); letter-spacing: -0.5px;
+  }
+  .page-header h1 em { font-style: italic; color: var(--gold); }
+  .page-header p { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+  /* ─── STATS ROW ─── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+    max-width: 600px;
+  }
+  .stat-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .stat-icon {
+    width: 44px; height: 44px; border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+  }
+  .stat-icon.pending { background: rgba(212,131,10,0.1); color: var(--warning); }
+  .stat-icon.completed { background: rgba(42,157,143,0.1); color: var(--success); }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--navy); line-height: 1; margin-bottom: 2px; }
+  .stat-label { font-size: 12px; color: var(--muted); }
+
+  /* ─── TABLE VIEW ─── */
+  .table-wrapper {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin-bottom: 24px;
+  }
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 900px;
+  }
+  .data-table th {
+    text-align: left;
+    padding: 14px 18px;
+    background: var(--bg);
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  .data-table tr:hover { background: #fafbfd; }
+  .data-table tr:last-child td { border-bottom: none; }
+
+  .article-title {
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 4px;
+  }
+  .article-meta {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    background: var(--bg);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-light);
+  }
+
+  /* Actions */
+  .actions { display: flex; gap: 6px; }
+  .action-btn {
+    width: 32px; height: 32px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .action-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--bg); }
+  .btn-decision {
+    padding: 8px 16px;
+    background: var(--navy);
+    color: var(--gold-light);
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn-decision:hover { background: var(--navy-mid); transform: translateY(-1px); box-shadow: var(--shadow); }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(13,33,55,0.5); backdrop-filter: blur(4px);
+    z-index: 200; display: none; align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--white); border-radius: var(--radius);
+    width: 100%; max-width: 800px; box-shadow: var(--shadow-md);
+    animation: fadeUp 0.2s ease; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-header {
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-title { font-family: 'Libre Baskerville', serif; font-size: 18px; color: var(--navy); }
+  .modal-close {
+    width: 30px; height: 30px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: none;
+    color: var(--muted); cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--bg); color: var(--navy); }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+
+  /* Article detail inside modal */
+  .article-detail-header {
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
+    color: white;
+    padding: 20px;
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+  }
+  .article-detail-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    font-family: 'Libre Baskerville', serif;
+  }
+  .article-detail-meta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    opacity: 0.9;
+  }
+  .info-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .info-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .review-card {
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .review-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .review-comment {
+    font-size: 13px;
+    color: var(--text-light);
+    line-height: 1.5;
+    margin-bottom: 8px;
+  }
+  .review-recommendation {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 8px;
+  }
+  .rec-accept { background: #e8f6f3; color: #1a5f57; }
+  .rec-minor { background: #f0f4ff; color: #3347bb; }
+  .rec-major { background: #fef8ec; color: #9a5f00; }
+  .rec-reject { background: #fdf2f2; color: #8b2020; }
+  
+  .decision-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .decision-option {
+    padding: 16px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+  }
+  .decision-option:hover {
+    border-color: var(--gold);
+    background: #fef9ed;
+  }
+  .decision-option.selected {
+    border-color: var(--navy);
+    background: #f0f4ff;
+  }
+  .decision-option i {
+    font-size: 24px;
+    margin-bottom: 8px;
+    display: block;
+  }
+  .decision-option.accept { color: var(--success); }
+  .decision-option.revision { color: var(--purple); }
+  .decision-option.reject { color: var(--danger); }
+  .decision-option span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  
+  .form-group { margin-bottom: 20px; }
+  .field-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+    display: block; margin-bottom: 8px;
+  }
+  .form-textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--white);
+    resize: vertical;
+    min-height: 120px;
+    outline: none;
+  }
+  .form-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44,111,173,0.12); }
+  .btn-primary {
+    background: var(--navy); color: var(--gold-light);
+    border: none; border-radius: var(--radius-sm);
+    padding: 10px 22px; font-size: 13.5px; font-weight: 500;
+    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary:hover { background: var(--navy-mid); transform: translateY(-1px); box-shadow: var(--shadow); }
+  .btn-secondary {
+    background: none; color: var(--text-light);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 9px 18px; font-size: 13px;
+    font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--navy); color: var(--navy); background: var(--bg); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state i {
+    font-size: 48px;
+    margin-bottom: 16px;
+    color: var(--border);
+  }
+  .empty-state h3 {
+    font-size: 18px;
+    color: var(--navy);
+    margin-bottom: 8px;
+  }
+
+  .footer {
+    background: var(--navy); color: rgba(255,255,255,0.45);
+    text-align: center; padding: 22px; margin-top: 48px; font-size: 13px;
+  }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+  @media (max-width: 900px) {
+    .stats-row { grid-template-columns: 1fr; }
+    .decision-options { grid-template-columns: 1fr; }
+    .topbar { padding: 0 16px; }
+    .nav-links { display: none; }
+    .page { padding: 24px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR - EXACTLY AS PROVIDED -->
+<header class="topbar">
+  <a class="brand" href="#">
+    <div class="brand-icon">📋</div>
+    <span class="brand-name">ConfManager</span>
+  </a>
+  <nav class="nav-links">
+    <a href="conferences.php" class="nav-link">Conférences & Articles</a>
+    <a href="evaluators.php" class="nav-link">Évaluateurs</a>
+    <a href="final_decisions.php" class="nav-link active">Décisions finales</a>
+    <a href="profile.php" class="nav-link">Profil</a>
+  </nav>
+  <div class="topbar-right">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" id="searchDecision" placeholder="Rechercher un article...">
+    </div>
+    <a href="logout.php" class="logout-btn"><span>↪</span> Déconnexion</a>
+  </div>
+</header>
+
+<main class="page">
+  <div class="page-header">
+    <div class="page-header-row">
+      <h1>Décisions <em>finales</em></h1>
+    </div>
+    <p>Articles en attente de décision finale après évaluation des relecteurs</p>
+  </div>
+
+  <!-- STATISTIQUES -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-icon pending"><i class="fas fa-hourglass-half"></i></div>
+      <div>
+        <div class="stat-value" id="pendingCount">0</div>
+        <div class="stat-label">En attente de décision</div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon completed"><i class="fas fa-check-circle"></i></div>
+      <div>
+        <div class="stat-value" id="completedCount">0</div>
+        <div class="stat-label">Décisions prises</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLEAU DES ARTICLES -->
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Article / Auteur</th>
+          <th>Conférence</th>
+          <th>Soumission</th>
+          <th>Évaluations</th>
+          <th>Recommandation</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="decisionsTableBody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer class="footer">© 2026 ConfManager · Université Hassiba Benbouali de Chlef · Tous droits réservés</footer>
+
+<!-- MODAL DÉCISION FINALE -->
+<div id="decisionModal" class="modal-backdrop">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Décision finale</div>
+      <button class="modal-close" onclick="closeDecisionModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body" id="decisionModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeDecisionModal()">Annuler</button>
+      <button class="btn-primary" id="submitDecisionBtn" onclick="submitDecision()">
+        <i class="fas fa-paper-plane"></i> Envoyer à l'auteur
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // WORKFLOW: 
+  // 1. User submits article
+  // 2. Manager sends to 2 reviewers
+  // 3. Reviewers evaluate → send back to Manager
+  // 4. Manager makes FINAL DECISION → article HIDES from this list
+
+  let articles = [
+    { 
+      id: 1, 
+      title: "Intelligence artificielle et apprentissage automatique dans l'enseignement supérieur", 
+      author: "Meziane Karima", 
+      authorEmail: "k.meziane@univ-oran.dz", 
+      conference: "ICSI 2025", 
+      submissionDate: "2025-03-10", 
+      status: "pending", // pending = waiting for manager decision
+      evaluations: [
+        { reviewer: "Dr. Boukhalfa Khaled", comment: "Excellent travail, méthodologie solide. Les résultats sont convaincants.", recommendation: "accept", date: "2025-03-20" },
+        { reviewer: "Pr. Sahraoui Rachid", comment: "Quelques corrections mineures à apporter, mais globalement très bon.", recommendation: "minor_revision", date: "2025-03-22" }
+      ]
+    },
+   
+    { 
+      id: 3, 
+      title: "Sécurité des systèmes IoT dans les villes intelligentes algériennes", 
+      author: "Hamidi Sofiane", 
+      authorEmail: "s.hamidi@univ-annaba.dz", 
+      conference: "STEM Forum 2025", 
+      submissionDate: "2025-05-03", 
+      status: "pending",
+      evaluations: [
+        { reviewer: "Dr. Yousfi Belkacem", comment: "Très bonne contribution. Les figures doivent être améliorées.", recommendation: "minor_revision", date: "2025-05-20" },
+        { reviewer: "Pr. Nouri Amira", comment: "La section sur les contre-mesures pourrait être développée.", recommendation: "major_revision", date: "2025-05-22" }
+      ]
+    },
+    { 
+      id: 4, 
+      title: "Énergies renouvelables et transition écologique en Algérie", 
+      author: "Ould-Ali Nadia", 
+      authorEmail: "n.ouldali@univ-setif.dz", 
+      conference: "GreenTech 2025", 
+      submissionDate: "2025-05-14", 
+      status: "pending",
+      evaluations: [
+        { reviewer: "Dr. Benali Karim", comment: "Fort taux de similarité, données non originales.", recommendation: "reject", date: "2025-05-25" },
+        { reviewer: "Pr. Hamdi Ahmed", comment: "Manque de rigueur méthodologique.", recommendation: "reject", date: "2025-05-26" }
+      ]
+    },
+    
+  ];
+
+  // Track completed decisions (articles hide after decision)
+  let completedDecisions = [];
+  let currentArticleId = null;
+  let selectedDecision = null;
+
+  function getRecommendationText(rec) {
+    const texts = {
+      accept: 'Accepter',
+      minor_revision: 'Révisions mineures',
+      major_revision: 'Révisions majeures',
+      reject: 'Refuser'
+    };
+    return texts[rec] || rec;
+  }
+
+  function getRecommendationClass(rec) {
+    const classes = {
+      accept: 'rec-accept',
+      minor_revision: 'rec-minor',
+      major_revision: 'rec-major',
+      reject: 'rec-reject'
+    };
+    return classes[rec] || 'rec-minor';
+  }
+
+  function getConsensusRecommendation(evaluations) {
+    if (evaluations.length === 0) return null;
+    
+    const counts = {};
+    evaluations.forEach(e => {
+      counts[e.recommendation] = (counts[e.recommendation] || 0) + 1;
+    });
+    
+    // Priority: reject > major_revision > minor_revision > accept
+    if (counts.reject >= 1) return 'reject';
+    if (counts.major_revision >= 1) return 'major_revision';
+    if (counts.minor_revision >= 2) return 'minor_revision';
+    if (counts.accept >= 1) return 'accept';
+    return 'minor_revision';
+  }
+
+  function updateStats() {
+    const pending = articles.filter(a => a.status === 'pending').length;
+    const completed = completedDecisions.length;
+    
+    document.getElementById('pendingCount').textContent = pending;
+    document.getElementById('completedCount').textContent = completed;
+  }
+
+  function renderTable() {
+    // Only show pending articles (hide completed ones)
+    const pendingArticles = articles.filter(a => a.status === 'pending');
+    
+    if (pendingArticles.length === 0) {
+      document.getElementById('decisionsTableBody').innerHTML = `
+        <tr>
+          <td colspan="6">
+            <div class="empty-state">
+              <i class="fas fa-check-circle"></i>
+              <h3>Toutes les décisions ont été prises</h3>
+              <p>Aucun article en attente de décision finale.</p>
+            </div>
+          </td>
+        </tr>
+      `;
+      return;
+    }
+    
+    let html = '';
+    pendingArticles.forEach(article => {
+      const formattedDate = new Date(article.submissionDate).toLocaleDateString('fr-FR');
+      const evalCount = article.evaluations.length;
+      const consensus = getConsensusRecommendation(article.evaluations);
+      
+      html += `
+        <tr>
+          <td>
+            <div class="article-title">${article.title}</div>
+            <div class="article-meta">
+              <span><i class="fas fa-user"></i> ${article.author}</span>
+              <span class="tag">${article.conference}</span>
+            </div>
+           </td>
+           <td>${article.conference}</td>
+          <td style="font-size:12px; color:var(--muted);">${formattedDate}</td>
+          <td><span class="review-recommendation rec-accept"><i class="fas fa-check-circle"></i> ${evalCount}/2 reçues</span></td>
+          <td>
+            <span class="review-recommendation ${getRecommendationClass(consensus)}">
+              ${getRecommendationText(consensus)}
+            </span>
+          </td>
+          <td>
+            <button class="btn-decision" onclick="openDecisionModal(${article.id})">
+              <i class="fas fa-gavel"></i> Décider
+            </button>
+           </td>
+         </tr>
+      `;
+    });
+    
+    document.getElementById('decisionsTableBody').innerHTML = html;
+  }
+
+  function render() {
+    updateStats();
+    renderTable();
+  }
+
+  function openDecisionModal(id) {
+    const article = articles.find(a => a.id === id);
+    if (!article) return;
+    
+    currentArticleId = id;
+    selectedDecision = null;
+    
+    // Build evaluations summary
+    let evaluationsHtml = '';
+    article.evaluations.forEach(review => {
+      evaluationsHtml += `
+        <div class="review-card">
+          <div class="review-header">
+            <span><i class="fas fa-user-check"></i> ${review.reviewer}</span>
+            <span style="font-size:10px; color:var(--muted);">${review.date}</span>
+          </div>
+          <div class="review-comment">${review.comment}</div>
+          <span class="review-recommendation ${getRecommendationClass(review.recommendation)}">
+            ${getRecommendationText(review.recommendation)}
+          </span>
+        </div>
+      `;
+    });
+    
+    const consensus = getConsensusRecommendation(article.evaluations);
+    
+    let html = `
+      <div class="article-detail-header">
+        <div class="article-detail-title">${article.title}</div>
+        <div class="article-detail-meta">
+          <span><i class="fas fa-user"></i> ${article.author}</span>
+          <span><i class="fas fa-envelope"></i> ${article.authorEmail}</span>
+          <span><i class="fas fa-calendar"></i> Soumis le ${new Date(article.submissionDate).toLocaleDateString('fr-FR')}</span>
+          <span><i class="fas fa-building"></i> ${article.conference}</span>
+        </div>
+      </div>
+      
+      <div class="info-card">
+        <div class="info-card-title"><i class="fas fa-comments"></i> Évaluations des relecteurs</div>
+        ${evaluationsHtml}
+      </div>
+      
+      <div class="info-card" style="background:#fef9ed; border-color:var(--gold-light);">
+        <div class="info-card-title"><i class="fas fa-balance-scale"></i> Consensus des évaluateurs</div>
+        <div style="padding:12px; background:var(--white); border-radius:var(--radius-sm);">
+          <span class="review-recommendation ${getRecommendationClass(consensus)}">
+            ${getRecommendationText(consensus)}
+          </span>
+          <div style="font-size:12px; color:var(--muted); margin-top:8px;">
+            Recommandation basée sur ${article.evaluations.length} évaluation(s)
+          </div>
+        </div>
+      </div>
+      
+      <div class="info-card">
+        <div class="info-card-title"><i class="fas fa-gavel"></i> Votre décision finale</div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:12px;">
+          Sélectionnez une décision et rédigez un commentaire pour l'auteur.
+        </div>
+        
+        <div class="decision-options">
+          <div class="decision-option accept" onclick="selectDecision('accepted')">
+            <i class="fas fa-check-circle"></i>
+            <span>Accepter</span>
+          </div>
+          <div class="decision-option revision" onclick="selectDecision('revision')">
+            <i class="fas fa-pencil-alt"></i>
+            <span>Révisions</span>
+          </div>
+          <div class="decision-option reject" onclick="selectDecision('rejected')">
+            <i class="fas fa-times-circle"></i>
+            <span>Refuser</span>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label class="field-label">Commentaire à l'auteur</label>
+          <textarea class="form-textarea" id="decisionComment" placeholder="Expliquez votre décision à l'auteur..."></textarea>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px;">
+            <i class="fas fa-envelope"></i> Ce message sera envoyé à ${article.authorEmail}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('decisionModalBody').innerHTML = html;
+    document.getElementById('decisionModal').classList.add('open');
+  }
+
+  function selectDecision(decision) {
+    selectedDecision = decision;
+    document.querySelectorAll('.decision-option').forEach(opt => opt.classList.remove('selected'));
+    document.querySelector(`.decision-option.${decision === 'accepted' ? 'accept' : decision === 'revision' ? 'revision' : 'reject'}`).classList.add('selected');
+  }
+
+  function submitDecision() {
+    if (!selectedDecision) {
+      alert('Veuillez sélectionner une décision.');
+      return;
+    }
+    
+    const comment = document.getElementById('decisionComment').value;
+    if (!comment || comment.trim().length < 10) {
+      alert('Veuillez rédiger un commentaire pour l\'auteur (minimum 10 caractères).');
+      return;
+    }
+    
+    const article = articles.find(a => a.id === currentArticleId);
+    if (!article) return;
+    
+    // Save completed decision
+    completedDecisions.push({
+      articleId: currentArticleId,
+      title: article.title,
+      author: article.author,
+      decision: selectedDecision,
+      comment: comment,
+      date: new Date().toISOString().split('T')[0]
+    });
+    
+    // Mark article as decided (hide from list)
+    article.status = 'decided';
+    
+    const decisionTexts = {
+      accepted: 'accepté pour publication',
+      revision: 'soumis à révisions',
+      rejected: 'refusé'
+    };
+    
+    alert(`✅ Décision envoyée !\n\nL'article "${article.title}" a été ${decisionTexts[selectedDecision]}.\n\nUn email a été envoyé à ${article.author}.\n\nCet article n'apparaîtra plus dans cette liste.`);
+    
+    closeDecisionModal();
+    render();
+  }
+
+  function closeDecisionModal() {
+    document.getElementById('decisionModal').classList.remove('open');
+    currentArticleId = null;
+    selectedDecision = null;
+  }
+
+  // Search functionality
+  document.getElementById('searchDecision').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    if (term === '') {
+      renderTable();
+      return;
+    }
+    
+    const pendingArticles = articles.filter(a => a.status === 'pending');
+    const filtered = pendingArticles.filter(a => 
+      a.title.toLowerCase().includes(term) || 
+      a.author.toLowerCase().includes(term) ||
+      a.conference.toLowerCase().includes(term)
+    );
+    
+    let html = '';
+    filtered.forEach(article => {
+      const formattedDate = new Date(article.submissionDate).toLocaleDateString('fr-FR');
+      const consensus = getConsensusRecommendation(article.evaluations);
+      
+      html += `
+        <tr>
+          <td>
+            <div class="article-title">${article.title}</div>
+            <div class="article-meta">
+              <span><i class="fas fa-user"></i> ${article.author}</span>
+              <span class="tag">${article.conference}</span>
+            </div>
+           </td>
+           <td>${article.conference}</td>
+          <td style="font-size:12px; color:var(--muted);">${formattedDate}</td>
+          <td><span class="review-recommendation rec-accept"><i class="fas fa-check-circle"></i> ${article.evaluations.length}/2 reçues</span></td>
+          <td><span class="review-recommendation ${getRecommendationClass(consensus)}">${getRecommendationText(consensus)}</span></td>
+          <td><button class="btn-decision" onclick="openDecisionModal(${article.id})"><i class="fas fa-gavel"></i> Décider</button></td>
+         </tr>
+      `;
+    });
+    
+    document.getElementById('decisionsTableBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding:40px;">Aucun résultat</td></tr>';
+  });
+
+  // Expose global functions
+  window.openDecisionModal = openDecisionModal;
+  window.selectDecision = selectDecision;
+  window.submitDecision = submitDecision;
+  window.closeDecisionModal = closeDecisionModal;
+
+  // Initial render
+  render();
+</script>
+</body>
+</html>

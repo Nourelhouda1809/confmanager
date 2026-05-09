@@ -1,0 +1,1051 @@
+<?php
+// ─────────────────────────────────────────
+// soumettre_article.php  — ConfManager
+// ─────────────────────────────────────────
+session_start();
+
+// ── Connexion BD ──────────────────────────
+require_once 'db.php';
+
+// ── Utilisateur connecté ──────────────────
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+$user_id       = (int) $_SESSION['user_id'];
+$user_nom      = htmlspecialchars($_SESSION['user_nom']    ?? 'Utilisateur');
+$user_prenom   = htmlspecialchars($_SESSION['user_prenom'] ?? '');
+$user_initials = strtoupper(substr($user_prenom, 0, 1) . substr($user_nom, 0, 1));
+$user_email    = htmlspecialchars($_SESSION['user_email']  ?? '');
+
+// ── Listes déroulantes ────────────────────
+// Fetch conferences where submission window is currently open:
+//   submission_start_date <= TODAY <= submission_deadline
+$conferences = [];
+try {
+    $stmt = $pdo->prepare(
+        "SELECT id, nom_fr, submission_start_date, submission_deadline
+         FROM conferences
+         WHERE submission_start_date <= CURDATE()
+           AND submission_deadline   >= CURDATE()
+         ORDER BY nom_fr"
+    );
+    $stmt->execute();
+    $conferences = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // silencieux – liste vide, données de démo affichées à la place
+}
+
+$domaines = [
+    'Informatique & IA',
+    'Études islamiques',
+    'Langue & Littérature arabes',
+    'Éducation & Pédagogie',
+    'Ingénierie & Technologie',
+    'Sciences naturelles',
+    'Sciences sociales',
+];
+
+$types_presentation = [
+    'Présentation orale',
+    'Poster',
+    "Article d'atelier",
+    'Article complet',
+];
+
+// ── Traitement POST ───────────────────────
+$errors     = [];
+$success    = false;
+$ref_number = '';
+$old        = [];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // CSRF
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+        $errors[] = 'Jeton de sécurité invalide. Veuillez recharger la page.';
+    }
+
+    // --- Nettoyage & récupération ---
+    $conference_id     = (int)  ($_POST['conference_id']     ?? 0);
+    $domaine           = trim(  $_POST['domaine']             ?? '');
+    $type_presentation = trim(  $_POST['type_presentation']  ?? '');
+    $titre_fr          = trim(  $_POST['titre_fr']            ?? '');
+    $titre_en          = trim(  $_POST['titre_en']            ?? '');
+    $titre_ar          = trim(  $_POST['titre_ar']            ?? '');
+    $resume_fr         = trim(  $_POST['resume_fr']           ?? '');
+    $resume_en         = trim(  $_POST['resume_en']           ?? '');
+    $mots_cles         = trim(  $_POST['mots_cles']           ?? '');
+    $chk_original      = isset( $_POST['chk_original']);
+    $chk_terms         = isset( $_POST['chk_terms']);
+    $chk_authors       = isset( $_POST['chk_authors']);
+
+    // Co-auteurs (tableaux)
+    $co_noms         = $_POST['co_nom']         ?? [];
+    $co_emails       = $_POST['co_email']        ?? [];
+    $co_institutions = $_POST['co_institution']  ?? [];
+
+    $old = compact(
+        'conference_id','domaine','type_presentation',
+        'titre_fr','titre_en','titre_ar',
+        'resume_fr','resume_en','mots_cles'
+    );
+
+    // --- Validation ---
+    if (empty($errors)) {
+        if ($conference_id <= 0)         $errors[] = 'Veuillez sélectionner une conférence.';
+        if ($domaine === '')             $errors[] = 'Veuillez sélectionner un domaine de recherche.';
+        if (mb_strlen($titre_fr) < 5)   $errors[] = 'Le titre en français est obligatoire (min. 5 caractères).';
+        if (mb_strlen($titre_en) < 5)   $errors[] = 'Le titre en anglais est obligatoire (min. 5 caractères).';
+        if (mb_strlen($resume_fr) < 50) $errors[] = 'Le résumé en français est obligatoire (min. 50 caractères).';
+        if (mb_strlen($resume_en) < 50) $errors[] = "L'abstract en anglais est obligatoire (min. 50 caractères).";
+        if ($mots_cles === '')          $errors[] = 'Les mots-clés sont obligatoires.';
+        if (!$chk_original)             $errors[] = "Vous devez confirmer l'originalité de l'article.";
+        if (!$chk_terms)                $errors[] = 'Vous devez accepter les conditions de publication.';
+
+        // Vérifier que la conférence existe et que les soumissions sont bien ouvertes
+        if ($conference_id > 0) {
+            try {
+                $chk = $pdo->prepare(
+                    "SELECT id FROM conferences
+                     WHERE id = :id
+                       AND submission_start_date <= CURDATE()
+                       AND submission_deadline   >= CURDATE()"
+                );
+                $chk->execute([':id' => $conference_id]);
+                if (!$chk->fetch()) {
+                    $errors[] = 'La conférence sélectionnée ne prend plus de soumissions.';
+                }
+            } catch (PDOException $e) { /* ignore */ }
+        }
+    }
+
+    // --- Fichier principal ---
+    $fichier_principal_path = '';
+    if (!isset($_FILES['fichier_principal']) || $_FILES['fichier_principal']['error'] === UPLOAD_ERR_NO_FILE) {
+        $errors[] = 'Le fichier de l\'article (PDF ou Word) est obligatoire.';
+    } elseif ($_FILES['fichier_principal']['error'] !== UPLOAD_ERR_OK) {
+        $errors[] = 'Erreur lors du téléchargement du fichier principal (code : ' . $_FILES['fichier_principal']['error'] . ').';
+    } else {
+        $allowed_main = ['pdf','doc','docx'];
+        $ext = strtolower(pathinfo($_FILES['fichier_principal']['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowed_main, true)) {
+            $errors[] = 'Format du fichier principal invalide. Acceptés : PDF, DOC, DOCX.';
+        } elseif ($_FILES['fichier_principal']['size'] > 20 * 1024 * 1024) {
+            $errors[] = 'Le fichier principal dépasse 20 Mo.';
+        } else {
+            $upload_dir = rtrim(UPLOAD_DIR, '/') . '/articles/';
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
+            $safe_name              = uniqid('art_', true) . '.' . $ext;
+            $fichier_principal_path = 'articles/' . $safe_name;
+            if (!move_uploaded_file($_FILES['fichier_principal']['tmp_name'], $upload_dir . $safe_name)) {
+                $errors[] = 'Impossible de déplacer le fichier principal. Vérifiez les droits du dossier.';
+                $fichier_principal_path = '';
+            }
+        }
+    }
+
+    // --- Fichiers supplémentaires ---
+    $fichiers_supp = [];
+    if (!empty($_FILES['fichiers_supp']['name'][0])) {
+        $allowed_supp    = ['pdf','doc','docx','zip','png','jpg','jpeg','xlsx','csv'];
+        $upload_dir_supp = rtrim(UPLOAD_DIR, '/') . '/supplementaires/';
+        if (!is_dir($upload_dir_supp)) mkdir($upload_dir_supp, 0755, true);
+
+        $count = count($_FILES['fichiers_supp']['name']);
+        for ($i = 0; $i < $count; $i++) {
+            if ($_FILES['fichiers_supp']['error'][$i] !== UPLOAD_ERR_OK) continue;
+            $ext_s = strtolower(pathinfo($_FILES['fichiers_supp']['name'][$i], PATHINFO_EXTENSION));
+            if (!in_array($ext_s, $allowed_supp, true)) continue;
+            if ($_FILES['fichiers_supp']['size'][$i] > 50 * 1024 * 1024) continue;
+            $safe_s = uniqid('supp_', true) . '.' . $ext_s;
+            if (move_uploaded_file($_FILES['fichiers_supp']['tmp_name'][$i], $upload_dir_supp . $safe_s)) {
+                $fichiers_supp[] = 'supplementaires/' . $safe_s;
+            }
+        }
+    }
+
+    // --- Insertion BD si pas d'erreur ---
+    if (empty($errors)) {
+        try {
+            $pdo->beginTransaction();
+
+            $ref_number = 'ART-' . date('Y') . '-' . strtoupper(substr(uniqid(), -6));
+
+            $sql = "INSERT INTO articles
+                        (reference, utilisateur_id, conference_id, domaine, type_presentation,
+                         titre_fr, titre_en, titre_ar,
+                         resume_fr, resume_en, mots_cles,
+                         fichier_principal, statut, date_soumission)
+                    VALUES
+                        (:ref, :uid, :cid, :dom, :tp,
+                         :tfr, :ten, :tar,
+                         :rfr, :ren, :mk,
+                         :fp, 'en_attente', NOW())";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                ':ref' => $ref_number, ':uid' => $user_id,  ':cid' => $conference_id,
+                ':dom' => $domaine,    ':tp'  => $type_presentation,
+                ':tfr' => $titre_fr,   ':ten' => $titre_en, ':tar' => $titre_ar,
+                ':rfr' => $resume_fr,  ':ren' => $resume_en,':mk'  => $mots_cles,
+                ':fp'  => $fichier_principal_path,
+            ]);
+            $article_id = (int) $pdo->lastInsertId();
+
+            // Fichiers supplémentaires
+            if (!empty($fichiers_supp)) {
+                $sqlF  = "INSERT INTO article_fichiers (article_id, chemin, type) VALUES (:aid, :ch, 'supplementaire')";
+                $stmtF = $pdo->prepare($sqlF);
+                foreach ($fichiers_supp as $ch) {
+                    $stmtF->execute([':aid' => $article_id, ':ch' => $ch]);
+                }
+            }
+
+            // Co-auteurs
+            $sqlCA  = "INSERT INTO article_coauteurs (article_id, nom, email, institution)
+                       VALUES (:aid, :nom, :email, :inst)";
+            $stmtCA = $pdo->prepare($sqlCA);
+            foreach ($co_noms as $idx => $co_nom) {
+                $co_nom   = trim($co_nom);
+                $co_email = trim($co_emails[$idx]        ?? '');
+                $co_inst  = trim($co_institutions[$idx]  ?? '');
+                if ($co_nom !== '') {
+                    $stmtCA->execute([
+                        ':aid'   => $article_id, ':nom'  => $co_nom,
+                        ':email' => $co_email,   ':inst' => $co_inst,
+                    ]);
+                }
+            }
+
+            $pdo->commit();
+            $success = true;
+            $old     = [];
+
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            $errors[] = 'Erreur base de données : ' . htmlspecialchars($e->getMessage());
+        }
+    }
+}
+
+// ── Helpers ───────────────────────────────
+function esc(string $v): string {
+    return htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+function old(string $key, array $old, string $default = ''): string {
+    return esc($old[$key] ?? $default);
+}
+function sel(string $key, string $value, array $old): string {
+    return ($old[$key] ?? '') === $value ? 'selected' : '';
+}
+
+// Régénérer le token CSRF
+$_SESSION['csrf_token'] ??= bin2hex(random_bytes(32));
+?>
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConfManager — Soumettre un article</title>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0d2137;
+    --navy-mid: #1a3a5c;
+    --gold: #c9a84c;
+    --gold-light: #e2c97e;
+    --bg: #f0f2f5;
+    --white: #ffffff;
+    --border: #e2e8f0;
+    --muted: #7a8fa6;
+    --text: #1a2e44;
+    --text-light: #4a607a;
+    --accent: #2c6fad;
+    --danger: #d94040;
+    --success: #2a9d8f;
+    --warning: #d4830a;
+    --shadow-sm: 0 1px 4px rgba(13,33,55,0.07);
+    --shadow: 0 4px 20px rgba(13,33,55,0.10);
+    --shadow-md: 0 8px 32px rgba(13,33,55,0.15);
+    --radius: 8px;
+    --radius-sm: 4px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ─── TOPBAR ─── */
+  .topbar {
+    background: var(--white);
+    border-bottom: 1px solid var(--border);
+    padding: 0 40px;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: var(--shadow-sm);
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    margin-right: 48px; text-decoration: none;
+  }
+  .brand-icon {
+    width: 34px; height: 34px; background: var(--navy);
+    border-radius: 6px; display: flex; align-items: center;
+    justify-content: center; color: white; font-size: 16px;
+  }
+  .brand-name { font-size: 18px; font-weight: 600; color: var(--navy); letter-spacing: -0.3px; }
+  .nav-links { display: flex; align-items: center; gap: 4px; flex: 1; }
+  .nav-link {
+    padding: 8px 16px; font-size: 14px; font-weight: 400;
+    color: var(--text-light); background: none; border: none;
+    border-radius: var(--radius-sm); cursor: pointer;
+    font-family: 'DM Sans', sans-serif; transition: all 0.15s;
+    position: relative; text-decoration: none; display: inline-block;
+  }
+  .nav-link:hover { color: var(--navy); background: var(--bg); }
+  .nav-link.active { color: var(--gold); font-weight: 500; }
+  .nav-link.active::after {
+    content: ''; position: absolute; bottom: -1px; left: 16px; right: 16px;
+    height: 2px; background: var(--gold); border-radius: 2px 2px 0 0;
+  }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .search-wrap { position: relative; margin-right: 8px; }
+  .search-input {
+    width: 240px; padding: 8px 14px 8px 36px;
+    border: 1px solid var(--border); border-radius: 20px;
+    font-size: 13.5px; font-family: 'DM Sans', sans-serif;
+    background: var(--bg); color: var(--text); outline: none; transition: all 0.15s;
+  }
+  .search-input::placeholder { color: var(--muted); }
+  .search-input:focus {
+    border-color: var(--accent); background: var(--white);
+    box-shadow: 0 0 0 3px rgba(44,111,173,0.10); width: 280px;
+  }
+  .search-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 13px; pointer-events: none;
+  }
+  .logout-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 18px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 13.5px; font-weight: 500; color: var(--text-light);
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s; text-decoration: none;
+  }
+  .logout-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--white); }
+
+  /* ─── LAYOUT ─── */
+  .page { max-width: 1100px; margin: 0 auto; padding: 40px 32px 60px; }
+  .page-header { margin-bottom: 32px; }
+  .page-header h1 {
+    font-family: 'Libre Baskerville', serif; font-size: 32px;
+    font-weight: 700; color: var(--navy); letter-spacing: -0.5px; margin-bottom: 6px;
+  }
+  .page-header h1 em { font-style: italic; color: var(--gold); }
+  .page-header p { font-size: 14px; color: var(--muted); }
+
+  .layout-single { max-width: 860px; margin: 0 auto; }
+
+  /* ─── ALERTS ─── */
+  .success-banner {
+    background: #e8f6f3; border: 1px solid #9dd8d0;
+    border-radius: var(--radius); padding: 18px 22px;
+    display: none; align-items: flex-start; gap: 14px; margin-bottom: 24px;
+  }
+  .success-banner.show { display: flex; }
+  .success-icon {
+    font-size: 18px; background: var(--success); color: white;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .success-title { font-weight: 600; color: #1a5f57; font-size: 14px; margin-bottom: 4px; }
+  .success-ref {
+    font-family: 'DM Mono', monospace; font-size: 12px; color: #0b3b36;
+    background: #c5ede8; padding: 2px 8px; border-radius: 3px; font-weight: 600;
+  }
+  .success-msg { font-size: 13px; color: #1a5f57; margin-top: 4px; }
+
+  .error-box {
+    background: #fdf2f2; border: 1px solid #f5b8b8;
+    border-radius: var(--radius); padding: 16px 20px; margin-bottom: 24px;
+  }
+  .error-box ul { padding-left: 18px; }
+  .error-box li { font-size: 13.5px; color: var(--danger); margin-bottom: 4px; line-height: 1.5; }
+  .error-box li:last-child { margin-bottom: 0; }
+
+  /* ─── FORM CARD ─── */
+  .form-card {
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm);
+  }
+  .profile-banner {
+    height: 120px;
+    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-mid) 100%);
+  }
+  .profile-meta { padding: 0 32px 24px; position: relative; }
+  .profile-avatar-wrap {
+    display: inline-block; margin-top: -30px; margin-bottom: 10px;
+  }
+  .profile-avatar {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--navy-mid); border: 3px solid var(--white);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 700; color: var(--white);
+  }
+  .profile-name { font-size: 18px; font-weight: 600; color: var(--navy); }
+  .profile-email { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .section-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
+  }
+  .section-header-icon {
+    width: 30px; height: 30px; background: var(--gold); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--navy); font-size: 14px;
+  }
+  .section-header-title { font-size: 15px; font-weight: 600; color: var(--navy); }
+
+  /* ─── STEPS BAR ─── */
+  .steps-bar {
+    display: flex; align-items: center;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 40px; padding: 5px; margin-bottom: 32px;
+  }
+  .step-pill {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    gap: 8px; padding: 10px 12px; border-radius: 30px; transition: all 0.2s; cursor: default;
+  }
+  .step-pill.active { background: var(--white); box-shadow: var(--shadow-sm); }
+  .step-num {
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--border); color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; flex-shrink: 0;
+  }
+  .step-pill.active .step-num  { background: var(--navy); color: var(--gold-light); }
+  .step-pill.done   .step-num  { background: var(--gold); color: white; }
+  .step-txt { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .step-pill.active .step-txt  { color: var(--navy); }
+  .step-pill.done   .step-txt  { color: var(--gold); }
+
+  /* ─── FORM BODY ─── */
+  .form-body { padding: 28px; }
+
+  .mini-section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 1.2px; color: var(--muted); margin-bottom: 14px; margin-top: 24px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mini-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .mini-section-title:first-child { margin-top: 0; }
+
+  .form-grid { display: grid; gap: 20px; margin-bottom: 20px; }
+  .form-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .form-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+
+  .field-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .field-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .field-required { color: var(--danger); }
+
+  .form-input, .form-select, .form-textarea {
+    padding: 11px 14px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif;
+    font-size: 14px; color: var(--text); background: var(--white);
+    transition: all 0.15s; outline: none;
+  }
+  .form-input::placeholder, .form-textarea::placeholder { color: #b0bec9; }
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44,111,173,0.12);
+  }
+  .form-textarea { resize: vertical; min-height: 120px; line-height: 1.6; }
+  .char-count { font-size: 11px; color: var(--muted); text-align: right; }
+
+  /* Deadline info box shown in step 1 when conference selected */
+  .conf-dates-info {
+    display: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-top: 12px;
+    font-size: 13px;
+  }
+  .conf-dates-info.show { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+  .conf-date-item .cdi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-weight: 600; margin-bottom: 3px; }
+  .conf-date-item .cdi-value { font-size: 13px; font-weight: 600; color: var(--navy); }
+
+  /* Co-auteurs */
+  .coauthor-row {
+    display: grid; grid-template-columns: 1fr 1fr 1fr auto;
+    gap: 12px; background: var(--bg); padding: 16px;
+    border-radius: var(--radius-sm); border: 1px solid var(--border);
+    margin-bottom: 10px; align-items: end;
+  }
+  .coauthor-row .form-group { margin-bottom: 0; }
+  .remove-btn {
+    height: 40px; width: 40px; background: none;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    cursor: pointer; color: var(--danger); font-size: 14px;
+    transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+  }
+  .remove-btn:hover { background: var(--danger); color: white; border-color: var(--danger); }
+  .add-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 18px; background: none; border: 1px dashed var(--gold);
+    border-radius: var(--radius-sm); color: var(--gold);
+    font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+    transition: all 0.15s; margin-top: 4px;
+  }
+  .add-btn:hover { background: #fef9ed; border-style: solid; }
+
+  /* Upload */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 28px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--bg); position: relative; margin-bottom: 12px;
+  }
+  .upload-zone:hover, .upload-zone.dragover { border-color: var(--gold); background: #fef9ed; }
+  .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 28px; margin-bottom: 8px; color: var(--gold); }
+  .upload-label { font-size: 14px; font-weight: 500; color: var(--text-light); margin-bottom: 4px; }
+  .upload-hint { font-size: 11px; color: var(--muted); }
+
+  .file-list { display: flex; flex-direction: column; gap: 8px; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 14px; font-size: 12.5px;
+  }
+  .file-icon { color: var(--accent); font-size: 14px; }
+  .file-name { flex: 1; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); word-break: break-all; }
+  .file-size { color: var(--muted); font-size: 11px; margin-right: 8px; white-space: nowrap; }
+  .file-remove { cursor: pointer; color: var(--danger); font-size: 14px; border: none; background: none; padding: 0 4px; }
+
+  /* Checkboxes */
+  .checkbox-group { display: flex; flex-direction: column; gap: 14px; margin: 20px 0; }
+  .checkbox-item { display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+  .checkbox-item input[type="checkbox"] { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--navy); cursor: pointer; flex-shrink: 0; }
+  .checkbox-item span { font-size: 13.5px; color: var(--text-light); line-height: 1.5; }
+
+  /* Buttons */
+  .btn-primary {
+    background: var(--navy); color: var(--gold-light); border: none;
+    border-radius: var(--radius-sm); padding: 11px 26px; font-size: 14px;
+    font-weight: 500; font-family: 'DM Sans', sans-serif; cursor: pointer;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary:hover { background: var(--navy-mid); transform: translateY(-1px); box-shadow: var(--shadow); }
+  .btn-secondary {
+    background: none; color: var(--text-light); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 11px 22px; font-size: 14px;
+    font-weight: 400; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-secondary:hover { border-color: var(--navy); color: var(--navy); background: var(--bg); }
+
+  .form-actions {
+    display: flex; justify-content: flex-end; gap: 12px; align-items: center;
+    margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border);
+  }
+
+  .notice-box {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 16px;
+    font-size: 12.5px; color: var(--muted); line-height: 1.7; margin-top: 16px;
+  }
+
+  /* Step content */
+  .step-content { display: none; animation: fadeUp 0.22s ease; }
+  .step-content.active { display: block; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  @media (max-width: 900px) {
+    .form-grid.cols-2, .form-grid.cols-3 { grid-template-columns: 1fr; }
+    .coauthor-row { grid-template-columns: 1fr; }
+    .conf-dates-info.show { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 600px) {
+    .topbar { padding: 0 16px; }
+    .nav-links { display: none; }
+    .search-wrap { display: none; }
+    .page { padding: 24px 16px; }
+    .form-body { padding: 20px 16px; }
+    .profile-meta { padding: 0 16px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <a class="brand" href="#">
+    <div class="brand-icon">📋</div>
+    <span class="brand-name">ConfManager</span>
+  </a>
+  <nav class="nav-links">
+    <a href="soumettre_article.php" class="nav-link active">Soumettre un article</a>
+    <a href="mes_articles.php"       class="nav-link">Mes articles</a>
+    <a href="profile.php"            class="nav-link">Profil</a>
+  </nav>
+  <div class="topbar-right">
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" placeholder="Rechercher...">
+    </div>
+    <a href="logout.php" class="logout-btn"><span>↪</span> Déconnexion</a>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- SUCCESS BANNER -->
+  <?php if ($success): ?>
+  <div class="success-banner show">
+    <div class="success-icon">✓</div>
+    <div>
+      <div class="success-title">Article soumis avec succès !</div>
+      <div class="success-msg">Votre numéro de référence : <span class="success-ref"><?= esc($ref_number) ?></span></div>
+      <div class="success-msg">Vous recevrez une notification par email lorsque l'évaluation commencera.</div>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <!-- ERREURS PHP -->
+  <?php if (!empty($errors)): ?>
+  <div class="error-box" id="errorBox">
+    <ul>
+      <?php foreach ($errors as $err): ?>
+        <li><?= esc($err) ?></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+  <?php endif; ?>
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <h1>Soumettre <em>un article</em></h1>
+    <p>Remplissez tous les champs obligatoires pour soumettre votre article à une conférence.</p>
+  </div>
+
+  <div class="layout-single">
+    <div class="form-card">
+
+      <!-- Profile banner -->
+      <div class="profile-banner"></div>
+      <div class="profile-meta">
+        <div class="profile-avatar-wrap">
+          <div class="profile-avatar"><?= esc($user_initials) ?></div>
+        </div>
+        <div class="profile-name"><?= esc($user_prenom) ?> <?= esc($user_nom) ?></div>
+        <div class="profile-email"><?= esc($user_email) ?></div>
+      </div>
+
+      <div class="section-header">
+        <div class="section-header-icon">✦</div>
+        <div class="section-header-title">Nouvelle soumission</div>
+      </div>
+
+      <!-- ══════════════════════════════════════════
+           UNIQUE <form> englobant toutes les étapes
+           ══════════════════════════════════════════ -->
+      <form method="POST" enctype="multipart/form-data" id="mainForm" novalidate class="form-body">
+
+        <!-- CSRF -->
+        <input type="hidden" name="csrf_token" value="<?= esc($_SESSION['csrf_token']) ?>">
+
+        <!-- Steps bar -->
+        <div class="steps-bar">
+          <div class="step-pill active" id="pill1"><div class="step-num">1</div><div class="step-txt">Conférence</div></div>
+          <div class="step-pill"        id="pill2"><div class="step-num">2</div><div class="step-txt">Informations</div></div>
+          <div class="step-pill"        id="pill3"><div class="step-num">3</div><div class="step-txt">Fichiers</div></div>
+          <div class="step-pill"        id="pill4"><div class="step-num">4</div><div class="step-txt">Confirmation</div></div>
+        </div>
+
+        <!-- ══ ÉTAPE 1 — Conférence ══ -->
+        <div class="step-content active" id="sc1">
+
+          <div class="mini-section-title">Sélection de la conférence</div>
+
+          <div class="form-group" style="margin-bottom:20px">
+            <div class="field-label-row">
+              <span class="field-label">Conférence <span class="field-required">*</span></span>
+            </div>
+            <select class="form-select" name="conference_id" id="selectConference" required
+                    onchange="showConfDates(this)">
+              <option value="">— Choisissez une conférence —</option>
+              <?php if (!empty($conferences)): ?>
+                <?php foreach ($conferences as $conf): ?>
+                  <option value="<?= (int)$conf['id'] ?>"
+                          data-sub-start="<?= esc($conf['submission_start_date']) ?>"
+                          data-sub-end="<?= esc($conf['submission_deadline']) ?>"
+                          <?= ($old['conference_id'] ?? 0) == $conf['id'] ? 'selected' : '' ?>>
+                    <?= esc($conf['nom_fr']) ?>
+                  </option>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <!-- Données de démo si BD vide -->
+                <option value="1"
+                        data-sub-start="2026-01-01" data-sub-end="2026-06-30"
+                        <?= sel('conference_id','1',$old) ?>>
+                  ICSI 2026 — Conférence internationale sur l'innovation scientifique
+                </option>
+                <option value="2"
+                        data-sub-start="2026-02-01" data-sub-end="2026-07-15"
+                        <?= sel('conference_id','2',$old) ?>>
+                  ARAS 2026 — Symposium arabe de recherche académique
+                </option>
+                <option value="3"
+                        data-sub-start="2026-03-01" data-sub-end="2026-08-01"
+                        <?= sel('conference_id','3',$old) ?>>
+                  STEM Forum 2026 — Forum Science, Technologie &amp; Ingénierie
+                </option>
+              <?php endif; ?>
+            </select>
+
+            <!-- Dates résumées de la conférence sélectionnée -->
+            <div class="conf-dates-info" id="confDatesInfo">
+              <div class="conf-date-item">
+                <div class="cdi-label">Ouverture soumissions</div>
+                <div class="cdi-value" id="cdiSubStart">—</div>
+              </div>
+              <div class="conf-date-item">
+                <div class="cdi-label">Clôture soumissions</div>
+                <div class="cdi-value" id="cdiSubEnd">—</div>
+              </div>
+              <div class="conf-date-item">
+                <div class="cdi-label">Soumissions</div>
+                <div class="cdi-value" id="cdiStatus">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-grid cols-2">
+            <div class="form-group">
+              <div class="field-label-row"><span class="field-label">Domaine de recherche <span class="field-required">*</span></span></div>
+              <select class="form-select" name="domaine" required>
+                <option value="">— Sélectionnez un domaine —</option>
+                <?php foreach ($domaines as $d): ?>
+                  <option value="<?= esc($d) ?>" <?= sel('domaine', $d, $old) ?>><?= esc($d) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+            <div class="form-group">
+              <div class="field-label-row"><span class="field-label">Type de présentation</span></div>
+              <select class="form-select" name="type_presentation">
+                <?php foreach ($types_presentation as $tp): ?>
+                  <option value="<?= esc($tp) ?>" <?= sel('type_presentation', $tp, $old) ?>><?= esc($tp) ?></option>
+                <?php endforeach; ?>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-primary" onclick="goToStep(2)">Continuer →</button>
+          </div>
+        </div><!-- /sc1 -->
+
+        <!-- ══ ÉTAPE 2 — Informations ══ -->
+        <div class="step-content" id="sc2">
+
+          <div class="mini-section-title">Informations de l'article</div>
+
+          <div class="form-group" style="margin-bottom:20px">
+            <div class="field-label-row"><span class="field-label">Titre en français <span class="field-required">*</span></span></div>
+            <input class="form-input" type="text" name="titre_fr"
+                   value="<?= old('titre_fr',$old) ?>"
+                   placeholder="Titre de l'article en français"
+                   oninput="updateCharCount(this,'countFr',200)">
+            <div class="char-count"><span id="countFr"><?= mb_strlen(old('titre_fr',$old)) ?></span> / 200</div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:20px">
+            <div class="field-label-row"><span class="field-label">Titre en anglais <span class="field-required">*</span></span></div>
+            <input class="form-input" type="text" name="titre_en"
+                   value="<?= old('titre_en',$old) ?>"
+                   placeholder="Title in English"
+                   oninput="updateCharCount(this,'countEn',200)">
+            <div class="char-count"><span id="countEn"><?= mb_strlen(old('titre_en',$old)) ?></span> / 200</div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:20px">
+            <div class="field-label-row">
+              <span class="field-label">Titre en arabe <span style="color:var(--muted);font-weight:400;">(optionnel)</span></span>
+            </div>
+            <input class="form-input" dir="rtl" type="text" name="titre_ar"
+                   value="<?= old('titre_ar',$old) ?>"
+                   placeholder="عنوان المقالة باللغة العربية"
+                   oninput="updateCharCount(this,'countAr',200)">
+            <div class="char-count"><span id="countAr"><?= mb_strlen(old('titre_ar',$old)) ?></span> / 200</div>
+          </div>
+
+          <div class="form-grid cols-2">
+            <div class="form-group">
+              <div class="field-label-row"><span class="field-label">Résumé en français <span class="field-required">*</span></span></div>
+              <textarea class="form-textarea" name="resume_fr"
+                        placeholder="Résumé de l'article en français (min. 50 caractères)..."
+                        oninput="updateCharCount(this,'countAbsFr',500)"><?= old('resume_fr',$old) ?></textarea>
+              <div class="char-count"><span id="countAbsFr"><?= mb_strlen(old('resume_fr',$old)) ?></span> / 500</div>
+            </div>
+            <div class="form-group">
+              <div class="field-label-row"><span class="field-label">Abstract in English <span class="field-required">*</span></span></div>
+              <textarea class="form-textarea" name="resume_en"
+                        placeholder="Abstract in English (min. 50 characters)..."
+                        oninput="updateCharCount(this,'countAbsEn',500)"><?= old('resume_en',$old) ?></textarea>
+              <div class="char-count"><span id="countAbsEn"><?= mb_strlen(old('resume_en',$old)) ?></span> / 500</div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:20px">
+            <div class="field-label-row"><span class="field-label">Mots-clés <span class="field-required">*</span></span></div>
+            <input class="form-input" type="text" name="mots_cles"
+                   value="<?= old('mots_cles',$old) ?>"
+                   placeholder="ex: intelligence artificielle, apprentissage automatique, NLP">
+            <div class="char-count" style="text-align:left;">Séparez par des virgules — 3 à 8 mots-clés recommandés</div>
+          </div>
+
+          <!-- Co-auteurs -->
+          <div class="mini-section-title">Co-auteurs <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optionnel)</span></div>
+          <div id="coauthorList"></div>
+          <button type="button" class="add-btn" onclick="addCoauthor()">＋ Ajouter un co-auteur</button>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="goToStep(1)">← Retour</button>
+            <button type="button" class="btn-primary"   onclick="goToStep(3)">Continuer →</button>
+          </div>
+        </div><!-- /sc2 -->
+
+        <!-- ══ ÉTAPE 3 — Fichiers ══ -->
+        <div class="step-content" id="sc3">
+
+          <div class="mini-section-title">Fichier principal</div>
+          <div class="form-group" style="margin-bottom:24px">
+            <div class="field-label-row">
+              <span class="field-label">Article (PDF ou Word) <span class="field-required">*</span></span>
+            </div>
+            <div class="upload-zone" id="mainZone">
+              <input type="file" name="fichier_principal" id="mainFile"
+                     accept=".pdf,.doc,.docx" onchange="handleFile(this,'mainFiles',false)">
+              <div class="upload-icon">📄</div>
+              <div class="upload-label">Cliquez ou glissez-déposez votre article</div>
+              <div class="upload-hint">PDF, DOC ou DOCX — Max 20 Mo</div>
+            </div>
+            <div class="file-list" id="mainFiles"></div>
+          </div>
+
+          <div class="mini-section-title">Fichiers supplémentaires <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optionnel)</span></div>
+          <div class="form-group">
+            <div class="upload-zone" id="suppZone">
+              <input type="file" name="fichiers_supp[]" id="suppFiles"
+                     accept=".pdf,.doc,.docx,.zip,.png,.jpg,.jpeg,.xlsx,.csv"
+                     multiple onchange="handleFile(this,'suppFilesList',true)">
+              <div class="upload-icon">📎</div>
+              <div class="upload-label">Données, images, annexes…</div>
+              <div class="upload-hint">PDF, Word, ZIP, images, Excel — Max 50 Mo par fichier</div>
+            </div>
+            <div class="file-list" id="suppFilesList"></div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="goToStep(2)">← Retour</button>
+            <button type="button" class="btn-primary"   onclick="goToStep(4)">Continuer →</button>
+          </div>
+        </div><!-- /sc3 -->
+
+        <!-- ══ ÉTAPE 4 — Confirmation ══ -->
+        <div class="step-content" id="sc4">
+
+          <div class="mini-section-title">Déclarations obligatoires</div>
+
+          <div class="checkbox-group">
+            <label class="checkbox-item">
+              <input type="checkbox" name="chk_original" id="chkOriginal"
+                     <?= (!empty($errors) && isset($_POST['chk_original'])) ? 'checked' : '' ?>>
+              <span>Je certifie que cet article est original et n'a pas été publié ni soumis simultanément dans une autre revue ou conférence.</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" name="chk_terms" id="chkTerms"
+                     <?= (!empty($errors) && isset($_POST['chk_terms'])) ? 'checked' : '' ?>>
+              <span>J'accepte les conditions de publication et le processus d'évaluation par les pairs de cette conférence.</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" name="chk_authors" id="chkAuthors"
+                     <?= (!empty($errors) && isset($_POST['chk_authors'])) ? 'checked' : '' ?>>
+              <span>Tous les co-auteurs ont été informés et ont consenti à cette soumission.</span>
+            </label>
+          </div>
+
+          <div class="notice-box">
+            En soumettant cet article, vous reconnaissez que toutes les informations fournies sont exactes et complètes.
+            Toute falsification peut entraîner le rejet immédiat et la notification de votre institution.
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn-secondary" onclick="goToStep(3)">← Retour</button>
+            <button type="submit" class="btn-primary">✓ Soumettre l'article</button>
+          </div>
+        </div><!-- /sc4 -->
+
+      </form><!-- /mainForm -->
+    </div><!-- /form-card -->
+  </div><!-- /layout-single -->
+</main>
+
+<!-- ═══════════ JAVASCRIPT ═══════════ -->
+<script>
+  let currentStep = 1;
+  const TOTAL_STEPS = 4;
+
+  // Si erreurs PHP → afficher directement l'étape 4 (confirmation)
+  <?php if (!empty($errors)): ?>
+  document.addEventListener('DOMContentLoaded', () => goToStep(4));
+  <?php endif; ?>
+
+  // ── Navigation entre étapes ─────────────────────────────
+  function goToStep(next) {
+    // Désactiver l'étape actuelle
+    document.getElementById('sc'   + currentStep).classList.remove('active');
+    const prevPill = document.getElementById('pill' + currentStep);
+    prevPill.classList.remove('active');
+    if (next > currentStep) prevPill.classList.add('done');
+    else                    prevPill.classList.remove('done');
+
+    currentStep = next;
+
+    // Activer la nouvelle étape
+    document.getElementById('sc'   + currentStep).classList.add('active');
+    const nextPill = document.getElementById('pill' + currentStep);
+    nextPill.classList.add('active');
+    nextPill.classList.remove('done');
+
+    // Scroll vers le haut du formulaire
+    document.getElementById('mainForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Compteur de caractères ──────────────────────────────
+  function updateCharCount(input, countId, max) {
+    const len = input.value.length;
+    const el  = document.getElementById(countId);
+    if (el) {
+      el.textContent = len;
+      el.style.color = len > max ? 'var(--danger)' : 'var(--muted)';
+    }
+  }
+
+  // ── Affichage des dates de la conférence sélectionnée ──
+  function showConfDates(select) {
+    const opt   = select.options[select.selectedIndex];
+    const box   = document.getElementById('confDatesInfo');
+    if (!opt.value) { box.classList.remove('show'); return; }
+
+    const subStart = opt.dataset.subStart || '';
+    const subEnd   = opt.dataset.subEnd   || '';
+
+    document.getElementById('cdiSubStart').textContent = subStart ? fmtDate(subStart) : '—';
+    document.getElementById('cdiSubEnd').textContent   = subEnd   ? fmtDate(subEnd)   : '—';
+
+    const today = new Date(); today.setHours(0,0,0,0);
+    const start = subStart ? new Date(subStart) : null;
+    const end   = subEnd   ? new Date(subEnd)   : null;
+    let statusEl = document.getElementById('cdiStatus');
+    if (end && today > end) {
+      statusEl.textContent  = 'Clôturées';
+      statusEl.style.color  = 'var(--danger)';
+    } else if (start && today < start) {
+      statusEl.textContent  = 'Pas encore ouvertes';
+      statusEl.style.color  = 'var(--warning)';
+    } else {
+      statusEl.textContent  = 'Ouvertes ✓';
+      statusEl.style.color  = 'var(--success)';
+    }
+
+    box.classList.add('show');
+  }
+
+  function fmtDate(iso) {
+    const [y,m,d] = iso.split('-');
+    const months  = ['jan.','fév.','mar.','avr.','mai','juin','juil.','août','sep.','oct.','nov.','déc.'];
+    return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+  }
+
+  // ── Gestion upload ──────────────────────────────────────
+  function handleFile(input, listId, multiple) {
+    const list = document.getElementById(listId);
+    if (!multiple) list.innerHTML = '';
+    Array.from(input.files).forEach(file => {
+      const div  = document.createElement('div');
+      div.className = 'file-item';
+      const size = (file.size / 1024 / 1024).toFixed(2);
+      div.innerHTML = `
+        <span class="file-icon">📄</span>
+        <span class="file-name">${escHtml(file.name)}</span>
+        <span class="file-size">${size} Mo</span>
+        <button type="button" class="file-remove" onclick="this.parentElement.remove()">✕</button>`;
+      list.appendChild(div);
+    });
+  }
+
+  // ── Co-auteurs ──────────────────────────────────────────
+  function addCoauthor() {
+    const list = document.getElementById('coauthorList');
+    const div  = document.createElement('div');
+    div.className = 'coauthor-row';
+    div.innerHTML = `
+      <div class="form-group">
+        <div class="field-label-row"><span class="field-label">Nom complet</span></div>
+        <input class="form-input" type="text" name="co_nom[]" placeholder="Nom du co-auteur">
+      </div>
+      <div class="form-group">
+        <div class="field-label-row"><span class="field-label">Email</span></div>
+        <input class="form-input" type="email" name="co_email[]" placeholder="email@institution.dz">
+      </div>
+      <div class="form-group">
+        <div class="field-label-row"><span class="field-label">Institution</span></div>
+        <input class="form-input" type="text" name="co_institution[]" placeholder="Université / Institut">
+      </div>
+      <button type="button" class="remove-btn" onclick="this.closest('.coauthor-row').remove()">✕</button>`;
+    list.appendChild(div);
+  }
+
+  // ── Drag & drop ─────────────────────────────────────────
+  document.querySelectorAll('.upload-zone').forEach(zone => {
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const input = zone.querySelector('input[type="file"]');
+      if (input && e.dataTransfer.files.length) {
+        // DataTransfer.files n'est pas assignable directement — on déclenche le change
+        Object.defineProperty(input, 'files', { value: e.dataTransfer.files, writable: false });
+        input.dispatchEvent(new Event('change'));
+      }
+    });
+  });
+
+  // ── Utilitaire escHtml ───────────────────────────────────
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Initialisation : afficher dates si conférence pré-sélectionnée (repopulation après erreur) ──
+  document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('selectConference');
+    if (sel && sel.value) showConfDates(sel);
+  });
+</script>
+</body>
+</html>

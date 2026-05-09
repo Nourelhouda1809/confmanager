@@ -1,117 +1,3 @@
-<?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-session_start();
-include "db.php";
-session_start();
-include "db.php";
-
-if(!isset($_SESSION['user_id'])){
-    header("Location: login.php");
-    exit();
-}
-
-$user_id = $_SESSION['user_id'];
-$success_message = '';
-$error_message = '';
-
-$sql = "SELECT * FROM users WHERE id = ?";
-$stmt = mysqli_prepare($conn, $sql);
-mysqli_stmt_bind_param($stmt, "i", $user_id);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
-$user = mysqli_fetch_assoc($result);
-
-if(!$user){
-    session_destroy();
-    header("Location: login.php");
-    exit();
-}
-
-if(isset($_POST['update_profile'])){
-    $first_name  = mysqli_real_escape_string($conn, $_POST['first_name']);
-    $last_name   = mysqli_real_escape_string($conn, $_POST['last_name']);
-    $username    = mysqli_real_escape_string($conn, $_POST['username']);
-    $email       = mysqli_real_escape_string($conn, $_POST['email']);
-    $phone       = mysqli_real_escape_string($conn, $_POST['phone']);
-    $location    = mysqli_real_escape_string($conn, $_POST['location']);
-    $bio         = mysqli_real_escape_string($conn, $_POST['bio']);
-    $twitter     = mysqli_real_escape_string($conn, $_POST['twitter']);
-    $linkedin    = mysqli_real_escape_string($conn, $_POST['linkedin']);
-    $facebook    = mysqli_real_escape_string($conn, $_POST['facebook']);
-    $researchgate= mysqli_real_escape_string($conn, $_POST['researchgate']);
-
-    $avatar_path = $user['avatar'];
-    if(isset($_FILES['avatar']) && $_FILES['avatar']['error'] == 0){
-        $allowed = ['jpg','jpeg','png','gif'];
-        $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
-        if(in_array($ext, $allowed)){
-            $upload_dir = 'uploads/avatars/';
-            if(!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
-            $new_filename = uniqid() . '.' . $ext;
-            if(move_uploaded_file($_FILES['avatar']['tmp_name'], $upload_dir . $new_filename))
-                $avatar_path = $upload_dir . $new_filename;
-        }
-    }
-
-    $cover_path = $user['cover'];
-    if(isset($_FILES['cover']) && $_FILES['cover']['error'] == 0){
-        $allowed = ['jpg','jpeg','png','gif'];
-        $ext = strtolower(pathinfo($_FILES['cover']['name'], PATHINFO_EXTENSION));
-        if(in_array($ext, $allowed)){
-            $upload_dir = 'uploads/covers/';
-            if(!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
-            $new_filename = uniqid() . '.' . $ext;
-            if(move_uploaded_file($_FILES['cover']['tmp_name'], $upload_dir . $new_filename))
-                $cover_path = $upload_dir . $new_filename;
-        }
-    }
-
-    $update_sql = "UPDATE users SET first_name=?,last_name=?,username=?,email=?,phone=?,location=?,bio=?,avatar=?,cover=?,twitter=?,linkedin=?,facebook=?,researchgate=? WHERE id=?";
-    $update_stmt = mysqli_prepare($conn, $update_sql);
-    mysqli_stmt_bind_param($update_stmt, "sssssssssssssi",
-        $first_name,$last_name,$username,$email,$phone,$location,$bio,$avatar_path,$cover_path,
-        $twitter,$linkedin,$facebook,$researchgate,$user_id);
-    if(mysqli_stmt_execute($update_stmt)){
-    $success_message = "Profil mis à jour avec succès !";
-    // Refresh user data from DB instead of manual merge
-    mysqli_stmt_execute($stmt);
-    $result = mysqli_stmt_get_result($stmt);
-    $user = mysqli_fetch_assoc($result);
-} else {
-    $error_message = "Erreur SQL: " . mysqli_stmt_error($update_stmt);
-    error_log("Profile update failed for user $user_id: " . mysqli_stmt_error($update_stmt));
-}
-}
-
-if(isset($_POST['change_password'])){
-    $current = $_POST['current_password'];
-    $new     = $_POST['new_password'];
-    $confirm = $_POST['confirm_password'];
-    if(password_verify($current, $user['password'])){
-        if($new === $confirm){
-            if(strlen($new) >= 6){
-                $hashed = password_hash($new, PASSWORD_DEFAULT);
-                $s = mysqli_prepare($conn, "UPDATE users SET password=? WHERE id=?");
-                mysqli_stmt_bind_param($s, "si", $hashed, $user_id);
-                $success_message = mysqli_stmt_execute($s) ? "Mot de passe changé avec succès !" : "Erreur.";
-            } else { $error_message = "Le mot de passe doit contenir au moins 6 caractères."; }
-        } else { $error_message = "Les nouveaux mots de passe ne correspondent pas."; }
-    } else { $error_message = "Mot de passe actuel incorrect."; }
-}
-
-if(isset($_POST['toggle_2fa'])){
-    $new_status = $user['two_factor_enabled'] ? 0 : 1;
-    $s = mysqli_prepare($conn, "UPDATE users SET two_factor_enabled=? WHERE id=?");
-    mysqli_stmt_bind_param($s, "ii", $new_status, $user_id);
-    if(mysqli_stmt_execute($s)){
-        $user['two_factor_enabled'] = $new_status;
-        $success_message = $new_status ? "2FA activé !" : "2FA désactivé.";
-    }
-}
-
-$initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_name']??'',0,1));
-?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -601,6 +487,38 @@ $initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_na
 </head>
 <body>
 
+<?php
+// Start session and get user role
+session_start();
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'chercheur'; // Default to chercheur if not set
+
+// Define navigation items for each role
+$nav_items = [
+    'gestionnaire' => [
+        ['url' => 'dashboard.php', 'label' => 'Tableau de bord', 'icon' => 'fa-chart-line'],
+        ['url' => 'submit_article.php', 'label' => 'Soumettre des articles', 'icon' => 'fa-file-upload'],
+        ['url' => 'all_articles.php', 'label' => 'Tous les articles', 'icon' => 'fa-folder-open'],
+        ['url' => 'users.php', 'label' => 'Utilisateurs', 'icon' => 'fa-users'],
+        ['url' => 'conferences.php', 'label' => 'Conférences', 'icon' => 'fa-calendar-alt'],
+        ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
+    ],
+    'chercheur' => [
+        ['url' => 'submit_article.php', 'label' => 'Soumettre des articles', 'icon' => 'fa-file-upload'],
+        ['url' => 'mes_articles.php', 'label' => 'Mes articles', 'icon' => 'fa-folder'],
+        ['url' => 'revisions.php', 'label' => 'Révisions', 'icon' => 'fa-edit'],
+        ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
+    ],
+    'reviewer' => [
+        ['url' => 'review_articles.php', 'label' => 'Articles à réviser', 'icon' => 'fa-glasses'],
+        ['url' => 'reviewed_articles.php', 'label' => 'Articles révisés', 'icon' => 'fa-check-circle'],
+        ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
+    ]
+];
+
+// Get navigation for current role (fallback to chercheur if role not recognized)
+$current_nav = isset($nav_items[$user_role]) ? $nav_items[$user_role] : $nav_items['chercheur'];
+?>
+
 <!-- TOPBAR -->
 <header class="topbar">
   <a class="brand" href="#">
@@ -608,11 +526,12 @@ $initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_na
     <span class="brand-name">ConfManager</span>
   </a>
   <nav class="nav-links">
-    <a href="dashboard.php" class="nav-link">Tableau de bord</a>
-    <a href="Soumettre des articles.html" class="nav-link">Soumettre des articles</a>
-    <a href="Mes articles.html" class="nav-link">Mes articles</a>
-    <a href="Revisions.html" class="nav-link">Revision</a>
-    <a href="profile.php" class="nav-link active">Profil</a>
+    <?php foreach($current_nav as $item): ?>
+      <a href="<?php echo htmlspecialchars($item['url']); ?>" 
+         class="nav-link <?php echo isset($item['active']) && $item['active'] ? 'active' : ''; ?>">
+        <?php echo htmlspecialchars($item['label']); ?>
+      </a>
+    <?php endforeach; ?>
   </nav>
   <div class="topbar-right">
     <div class="search-wrap">
@@ -633,30 +552,6 @@ $initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_na
     <h1>Éditer <em>le profil</em></h1>
     <p>Gérez votre apparence publique et vos informations personnelles</p>
   </div>
-
-  <?php if(isset($_POST['update_profile'])): ?>
-  <div style="background:#fff3cd;padding:15px;border:1px solid #ffc107;border-radius:4px;margin:20px;">
-    <strong>Debug Info:</strong><br>
-    POST keys: <?php echo implode(', ', array_keys($_POST)); ?><br>
-    Files: <?php echo print_r($_FILES, true); ?><br>
-    User ID: <?php echo htmlspecialchars($user_id); ?><br>
-    SQL Error (if any): <?php echo isset($update_stmt) ? mysqli_stmt_error($update_stmt) : 'N/A'; ?>
-  </div>
-   <?php endif; ?>
-
-  <!-- MESSAGES -->
-  <?php if($success_message): ?>
-    <div class="message success">
-      <i class="fas fa-check-circle"></i>
-      <?php echo htmlspecialchars($success_message); ?>
-    </div>
-  <?php endif; ?>
-  <?php if($error_message): ?>
-    <div class="message error">
-      <i class="fas fa-exclamation-circle"></i>
-      <?php echo htmlspecialchars($error_message); ?>
-    </div>
-  <?php endif; ?>
 
   <!-- GRID -->
   <div class="profile-grid">
@@ -837,25 +732,6 @@ $initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_na
           <div class="form-body">
             <div class="mini-section-title">Sécurité</div>
 
-            <!-- 2FA -->
-            <div class="security-card">
-              <div class="security-card-header">
-                <div class="security-card-icon"><i class="fas fa-shield-alt"></i></div>
-                <div class="security-card-info">
-                  <h4>Authentification à deux facteurs (2FA)</h4>
-                  <p>Ajoutez une couche de sécurité supplémentaire à votre compte</p>
-                </div>
-                <div class="toggle-wrap">
-                  <label class="toggle-switch">
-                    <input type="checkbox" name="toggle_2fa" onchange="this.form.submit()"
-                      <?php echo ($user['two_factor_enabled']??0) ? 'checked' : ''; ?>>
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <span class="toggle-label"><?php echo ($user['two_factor_enabled']??0) ? 'Activé' : 'Désactivé'; ?></span>
-                </div>
-              </div>
-            </div>
-
             <!-- Password change -->
             <div class="security-card">
               <div class="security-card-header">
@@ -884,29 +760,6 @@ $initials = strtoupper(substr($user['first_name']??'',0,1).substr($user['last_na
                   <button type="submit" name="change_password" class="btn-primary">
                     <i class="fas fa-lock"></i> Changer le mot de passe
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Active sessions -->
-            <div class="security-card">
-              <div class="security-card-header">
-                <div class="security-card-icon"><i class="fas fa-desktop"></i></div>
-                <div class="security-card-info">
-                  <h4>Sessions actives</h4>
-                  <p>Appareils connectés à votre compte</p>
-                </div>
-              </div>
-              <div class="security-card-body">
-                <div class="session-item">
-                  <div class="session-info">
-                    <div class="session-device"><i class="fas fa-laptop"></i></div>
-                    <div class="session-details">
-                      <h5>Navigateur Web · Windows</h5>
-                      <p>Oran, Algérie · Il y a quelques instants</p>
-                    </div>
-                  </div>
-                  <span class="session-badge">Session actuelle</span>
                 </div>
               </div>
             </div>
