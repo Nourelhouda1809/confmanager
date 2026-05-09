@@ -247,9 +247,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
 $nav_items = [
     'gestionnaire' => [
         ['url' => 'admin_dashboard.php', 'label' => 'Tableau de bord', 'icon' => 'fa-chart-line'],
-        ['url' => 'submit_article.php', 'label' => 'Soumettre des articles', 'icon' => 'fa-file-upload'],
-        ['url' => 'all_articles.php', 'label' => 'Tous les articles', 'icon' => 'fa-folder-open'],
-        ['url' => 'users.php', 'label' => 'Utilisateurs', 'icon' => 'fa-users'],
+     
+        
         ['url' => 'evaluators.php', 'label' => 'Évaluateurs', 'icon' => 'fa-users'],
         ['url' => 'final_decisions.php', 'label' => 'Décisions', 'icon' => 'fa-gavel'],
         ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
@@ -261,8 +260,8 @@ $nav_items = [
         ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
     ],
     'reviewer' => [
-        ['url' => 'review_articles.php', 'label' => 'Articles à réviser', 'icon' => 'fa-glasses'],
-        ['url' => 'reviewed_articles.php', 'label' => 'Articles révisés', 'icon' => 'fa-check-circle'],
+        ['url' => 'review_articles.php', 'label' => 'Articles assignés', 'icon' => 'fa-glasses'],
+        ['url' => 'reviewed_articles.php', 'label' => 'Articles évalués', 'icon' => 'fa-check-circle'],
         ['url' => 'profile.php', 'label' => 'Profil', 'icon' => 'fa-user', 'active' => true],
     ]
 ];

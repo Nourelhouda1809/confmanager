@@ -111,7 +111,7 @@ $stmt = $pdo->prepare("
         ar.assigned_date,
         DATE_ADD(ar.assigned_date, INTERVAL 14 DAY) as deadline,
         ar.status as review_status,
-        a.statut as article_status,
+        a.status as article_status,
         e.id as evaluation_id,
         e.recommendation,
         e.strengths,
@@ -126,7 +126,7 @@ $stmt = $pdo->prepare("
         a.fichier_principal as file,
         CASE
             WHEN e.id IS NOT NULL THEN 'done'
-            WHEN a.statut = 'revised' THEN 'revised'
+            WHEN a.status = 'revised' THEN 'revised'
             ELSE 'pending'
         END AS display_status
     FROM article_reviewers ar
@@ -268,7 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         default => 'en_evaluation'
                     };
                     $updateArticleStmt = $pdo->prepare("
-                        UPDATE articles SET statut = ?, date_decision = CURDATE()
+                        UPDATE articles SET status = ?, date_decision = CURDATE()
                         WHERE id = ?
                     ");
                     $updateArticleStmt->execute([$newStatus, $articleId]);
@@ -317,7 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // Update article final status
             $newStatus = $decision === 'accept' ? 'accepte' : 'refuse';
             $updateArticleStmt = $pdo->prepare("
-                UPDATE articles SET statut = ?, date_decision = CURDATE()
+                UPDATE articles SET status = ?, date_decision = CURDATE()
                 WHERE id = ?
             ");
             $updateArticleStmt->execute([$newStatus, $articleId]);
@@ -728,9 +728,11 @@ $csrfToken = $_SESSION['csrf_token'];
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <a class="brand" href="reviewer_dashboard.php">
-    <div class="brand-icon">📋</div>
-    <span class="brand-name">ConfManager</span>
+   <a class="brand" href="#">
+    <div class="logo-wrapper">
+      <div class="logo-icon"><i class="fas fa-book-open"></i></div>
+      <span class="logo-text">ConfManager</span>
+    </div>
   </a>
   <nav class="nav-links">
     <a href="reviewer_dashboard.php" class="nav-link">Tableau de bord</a>
@@ -1016,6 +1018,67 @@ function openReviewForm(id) {
     
     document.getElementById('reviewModalTitle').innerHTML = `<i class="fas fa-pen-alt" style="color:var(--gold);margin-right:8px"></i>Évaluation — ${a.ref}`;
     document.getElementById('reviewModalBody').innerHTML = `
+    <!-- Add this to the review form page -->
+<div class="evaluation-panel" style="background: var(--bg); border-radius: var(--radius); padding: 20px; margin-bottom: 24px;">
+    <h3 style="color: var(--navy); margin-bottom: 16px;">
+        <i class="fas fa-robot"></i> Analyse automatique de l'article
+    </h3>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        <!-- Similarity Card -->
+        <div style="background: white; border-radius: var(--radius-sm); padding: 16px; border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <i class="fas fa-copy" style="color: var(--accent);"></i>
+                    <strong style="margin-left: 8px;">Similarité</strong>
+                </div>
+                <span class="badge" style="background: <?= ($similarityScore > 30) ? 'var(--danger-light)' : 'var(--success-light)' ?>; color: <?= ($similarityScore > 30) ? 'var(--danger)' : 'var(--success)' ?>;">
+                    <?= $similarityScore ?>% <?= ($similarityScore > 30) ? '⚠️' : '✓' ?>
+                </span>
+            </div>
+            <div class="progress-bar" style="height: 8px; background: var(--border); border-radius: 4px;">
+                <div class="progress-fill" style="width: <?= min(100, $similarityScore) ?>%; background: <?= ($similarityScore > 30) ? 'var(--danger)' : 'var(--success)' ?>;"></div>
+            </div>
+            <?php if ($similarityScore > 30): ?>
+                <div style="margin-top: 12px; padding: 8px; background: var(--danger-light); border-radius: var(--radius-sm); font-size: 12px;">
+                    <i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i>
+                    Similarité élevée détectée. Veuillez examiner attentivement.
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <!-- AI Detection Card -->
+        <div style="background: white; border-radius: var(--radius-sm); padding: 16px; border: 1px solid var(--border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div>
+                    <i class="fas fa-brain" style="color: var(--purple);"></i>
+                    <strong style="margin-left: 8px;">IA Générée</strong>
+                </div>
+                <span class="badge" style="background: <?= ($aiScore > 40) ? 'var(--danger-light)' : 'var(--success-light)' ?>; color: <?= ($aiScore > 40) ? 'var(--danger)' : 'var(--success)' ?>;">
+                    <?= $aiScore ?>% <?= ($aiScore > 40) ? '⚠️' : '✓' ?>
+                </span>
+            </div>
+            <div class="progress-bar" style="height: 8px; background: var(--border); border-radius: 4px;">
+                <div class="progress-fill" style="width: <?= min(100, $aiScore) ?>%; background: <?= ($aiScore > 40) ? 'var(--danger)' : 'var(--success)' ?>;"></div>
+            </div>
+            <?php if ($aiScore > 40): ?>
+                <div style="margin-top: 12px; padding: 8px; background: var(--danger-light); border-radius: var(--radius-sm); font-size: 12px;">
+                    <i class="fas fa-robot" style="color: var(--danger);"></i>
+                    Probabilité élevée de contenu généré par IA. Vérification recommandée.
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <?php if ($similarityScore > 30 || $aiScore > 40): ?>
+    <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: var(--radius-sm); border-left: 4px solid var(--warning);">
+        <strong style="color: var(--warning);">⚠️ Alerte de qualité</strong>
+        <p style="margin-top: 4px; font-size: 13px; color: var(--text-light);">
+            Cet article présente des indicateurs de risque. Veuillez porter une attention particulière à l'originalité du contenu.
+        </p>
+    </div>
+    <?php endif; ?>
+</div>
         <div class="download-zone">
             <i class="fas fa-file-pdf download-icon"></i>
             <div class="download-info">

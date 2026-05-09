@@ -37,17 +37,62 @@ class Database {
     }
 }
 
-$pdo = Database::getConnection();
+$db = Database::getConnection();
 $reviewerId = $_SESSION['user_id'];
 
+// ==================== CREATE NOTIFICATIONS TABLE IF NOT EXISTS ====================
+$createNotifTable = "
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        type ENUM('new-article', 'revised', 'reminder', 'info') NOT NULL,
+        title VARCHAR(255),
+        message TEXT NOT NULL,
+        article_id INT,
+        is_read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_user (user_id),
+        INDEX idx_read (is_read)
+    )
+";
+try {
+    $db->exec($createNotifTable);
+} catch (PDOException $e) {
+    // Table might already exist
+}
+
+// ==================== AJAX HANDLERS ====================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
+    $action = $_POST['action'];
+    
+    if ($action === 'mark_notification_read') {
+        $notifId = (int)$_POST['notif_id'];
+        $stmt = $db->prepare("UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?");
+        $stmt->execute([$notifId, $reviewerId]);
+        echo json_encode(['success' => true]);
+        exit;
+    }
+    
+    if ($action === 'mark_all_notifications_read') {
+        $stmt = $db->prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?");
+        $stmt->execute([$reviewerId]);
+        echo json_encode(['success' => true]);
+        exit;
+    }
+    
+    echo json_encode(['success' => false, 'error' => 'Unknown action']);
+    exit;
+}
+
 // ==================== GET REVIEWER INFO ====================
-$stmtUser = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = :id");
+$stmtUser = $db->prepare("SELECT first_name, last_name FROM users WHERE id = :id");
 $stmtUser->execute([':id' => $reviewerId]);
 $reviewer = $stmtUser->fetch();
 $reviewerName = $reviewer ? $reviewer['first_name'] . ' ' . $reviewer['last_name'] : 'Évaluateur';
 
-// ==================== GET ASSIGNED ARTICLES ====================
-$stmt = $pdo->prepare("
+// ==================== GET ASSIGNED ARTICLES WITH EVALUATIONS ====================
+$stmt = $db->prepare("
     SELECT 
         a.id,
         a.reference as ref,
@@ -59,7 +104,7 @@ $stmt = $pdo->prepare("
         ar.assigned_date,
         DATE_ADD(ar.assigned_date, INTERVAL 14 DAY) as deadline,
         ar.status as review_status,
-        a.statut as article_status,
+        a.status as article_status,
         e.id as evaluation_id,
         e.recommendation,
         e.strengths,
@@ -70,12 +115,14 @@ $stmt = $pdo->prepare("
         e.quality,
         e.significance,
         e.language,
-        e.format,
+     
         e.completed_date,
         a.fichier_principal as file,
+        a.similarity_score,
+        a.ai_score,
         CASE
             WHEN e.id IS NOT NULL THEN 'done'
-            WHEN a.statut = 'revised' THEN 'revised'
+            WHEN a.status = 'revised' THEN 'revised'
             ELSE 'pending'
         END AS display_status,
         CASE
@@ -121,13 +168,12 @@ foreach ($assignments as &$a) {
     };
     
     $a['assigned_date_formatted'] = date('d M Y', strtotime($a['assigned_date']));
-    $a['authors'] = ''; // Will be populated from another query if needed
 }
 unset($a);
 
 // Get authors for each article
 foreach ($assignments as &$a) {
-    $stmtAuthors = $pdo->prepare("
+    $stmtAuthors = $db->prepare("
         SELECT u.first_name, u.last_name 
         FROM users u 
         JOIN articles a2 ON a2.utilisateur_id = u.id 
@@ -156,29 +202,7 @@ $pendingTop4 = array_slice(array_values($pendingArticles), 0, 4);
 $deadlineTop5 = array_slice(array_values($pendingArticles), 0, 5);
 
 // ==================== GET NOTIFICATIONS ====================
-// Create notifications table if not exists
-$createNotifTable = "
-    CREATE TABLE IF NOT EXISTS notifications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        type ENUM('new-article', 'revised', 'reminder', 'info') NOT NULL,
-        title VARCHAR(255),
-        message TEXT NOT NULL,
-        article_id INT,
-        is_read BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        INDEX idx_user (user_id),
-        INDEX idx_read (is_read)
-    )
-";
-try {
-    $pdo->exec($createNotifTable);
-} catch (PDOException $e) {
-    // Table might already exist
-}
-
-$stmtNotif = $pdo->prepare("
+$stmtNotif = $db->prepare("
     SELECT id, type, message, is_read, created_at, article_id
     FROM notifications
     WHERE user_id = :user_id
@@ -227,8 +251,8 @@ $csrfToken = $_SESSION['csrf_token'];
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ConfManager — Tableau de Bord</title>
-<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>ConfManager — Tableau de Bord Évaluateur</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   :root {
@@ -244,17 +268,27 @@ $csrfToken = $_SESSION['csrf_token'];
     --text-light: #4a607a;
     --accent: #2c6fad;
     --danger: #d94040;
+    --danger-light: #fee2e2;
     --success: #2a9d8f;
+    --success-light: #d1fae5;
     --warning: #d4830a;
+    --warning-light: #fed7aa;
+    --purple: #5b6ef5;
     --shadow-sm: 0 1px 4px rgba(13,33,55,0.07);
     --shadow: 0 4px 20px rgba(13,33,55,0.10);
     --shadow-md: 0 8px 32px rgba(13,33,55,0.15);
     --radius: 8px;
     --radius-sm: 4px;
   }
+    body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
   /* ─── TOPBAR ─── */
   .topbar {
@@ -273,7 +307,7 @@ $csrfToken = $_SESSION['csrf_token'];
   .nav-link {
     padding: 8px 16px; font-size: 14px; font-weight: 400;
     color: var(--text-light); background: none; border: none;
-    border-radius: var(--radius-sm); cursor: pointer; font-family: 'DM Sans', sans-serif;
+    border-radius: var(--radius-sm); cursor: pointer; font-family: 'Inter', sans-serif;
     transition: all 0.15s; position: relative; text-decoration: none; display: inline-block;
   }
   .nav-link:hover { color: var(--navy); background: var(--bg); }
@@ -289,14 +323,14 @@ $csrfToken = $_SESSION['csrf_token'];
   .search-input {
     width: 240px; padding: 8px 14px 8px 36px;
     border: 1px solid var(--border); border-radius: 20px;
-    font-size: 13.5px; font-family: 'DM Sans', sans-serif;
+    font-size: 13.5px; font-family: 'Inter', sans-serif;
     background: var(--bg); color: var(--text); outline: none; transition: all 0.15s;
   }
   .search-input::placeholder { color: var(--muted); }
   .search-input:focus { border-color: var(--accent); background: var(--white); box-shadow: 0 0 0 3px rgba(44,111,173,0.10); width: 280px; }
   .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
 
-  /* NOTIFICATION BELL WITH CATEGORIES */
+  /* NOTIFICATION BELL */
   .notif-wrap { position: relative; }
   .notif-btn {
     width: 38px; height: 38px; border-radius: var(--radius-sm);
@@ -317,7 +351,7 @@ $csrfToken = $_SESSION['csrf_token'];
   }
   .notif-badge.hidden { display: none; }
   
-  /* NOTIFICATION DROPDOWN WITH CATEGORIES */
+  /* NOTIFICATION DROPDOWN */
   .notif-dropdown {
     position: absolute; top: calc(100% + 10px); right: 0;
     width: 400px; background: var(--white);
@@ -331,17 +365,17 @@ $csrfToken = $_SESSION['csrf_token'];
     display: flex; align-items: center; justify-content: space-between;
   }
   .notif-dd-title { font-size: 14px; font-weight: 600; color: var(--navy); }
-  .notif-mark-all { font-size: 12px; color: var(--accent); cursor: pointer; border: none; background: none; font-family: 'DM Sans', sans-serif; }
+  .notif-mark-all { font-size: 12px; color: var(--accent); cursor: pointer; border: none; background: none; font-family: 'Inter', sans-serif; }
   .notif-mark-all:hover { text-decoration: underline; }
   
-  /* CATEGORY TABS INSIDE DROPDOWN */
+  /* CATEGORY TABS */
   .notif-categories {
     display: flex; border-bottom: 1px solid var(--border);
     background: var(--bg);
   }
   .notif-cat-btn {
     flex: 1; padding: 10px 8px; border: none; background: none;
-    font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500;
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
     color: var(--muted); cursor: pointer; transition: all 0.15s;
     display: flex; align-items: center; justify-content: center; gap: 6px;
   }
@@ -392,13 +426,13 @@ $csrfToken = $_SESSION['csrf_token'];
     padding: 9px 18px; background: var(--bg);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     font-size: 13.5px; font-weight: 500; color: var(--text-light);
-    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; font-family: 'Inter', sans-serif;
     transition: all 0.15s; text-decoration: none;
   }
   .logout-btn:hover { border-color: var(--navy); color: var(--navy); background: var(--white); }
 
   /* ─── PAGE ─── */
-  .page { max-width: 1100px; margin: 0 auto; padding: 40px 32px 60px; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 40px 32px 60px; }
   .page-header { margin-bottom: 28px; }
   .page-header-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
   .page-header h1 { font-family: 'Libre Baskerville', serif; font-size: 32px; font-weight: 700; color: var(--navy); letter-spacing: -0.5px; }
@@ -411,24 +445,136 @@ $csrfToken = $_SESSION['csrf_token'];
     background: var(--white); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 20px;
     box-shadow: var(--shadow-sm); cursor: pointer; transition: all 0.2s;
-    position: relative; overflow: hidden; text-decoration: none; display: block;
+    text-decoration: none; display: block;
   }
   .status-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--navy); }
   .status-card.accept { border-left: 4px solid var(--success); }
   .status-card.reject { border-left: 4px solid var(--danger); }
   .status-card.new { border-left: 4px solid var(--accent); }
-  .status-card.revised { border-left: 4px solid #5b6ef5; }
+  .status-card.revised { border-left: 4px solid var(--purple); }
   .status-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .status-card-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
   .status-card.accept .status-card-icon { background: #e8f6f3; color: var(--success); }
   .status-card.reject .status-card-icon { background: #fdf2f2; color: var(--danger); }
   .status-card.new .status-card-icon { background: #eef3fb; color: var(--accent); }
-  .status-card.revised .status-card-icon { background: #f0f4ff; color: #5b6ef5; }
+  .status-card.revised .status-card-icon { background: #f0f4ff; color: var(--purple); }
   .status-card-title { font-size: 13px; font-weight: 600; color: var(--navy); }
   .status-card-count { font-size: 28px; font-weight: 700; color: var(--navy); margin-top: 4px; }
   .status-card-label { font-size: 12px; color: var(--muted); }
 
-  /* ─── DEADLINE STRIP ─── */
+  /* ─── EVALUATION SUMMARY CARDS ─── */
+  .evaluation-summary {
+    margin-bottom: 24px;
+    background: var(--white);
+    border-radius: var(--radius);
+    padding: 20px;
+    border: 1px solid var(--border);
+  }
+  .summary-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--navy);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .eval-card {
+    background: var(--bg);
+    border-radius: var(--radius);
+    padding: 16px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+  }
+  .eval-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+    border-color: var(--accent);
+  }
+  .eval-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .eval-ref {
+    font-family: 'Monaco', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--navy);
+    background: var(--white);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .eval-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+  .score-label {
+    color: var(--muted);
+  }
+  .score-value {
+    font-weight: 600;
+  }
+  .score-value.low { color: var(--success); }
+  .score-value.medium { color: var(--warning); }
+  .score-value.high { color: var(--danger); }
+  .progress-bar {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .eval-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .risk-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .risk-low {
+    background: var(--success-light);
+    color: var(--success);
+  }
+  .risk-medium {
+    background: var(--warning-light);
+    color: var(--warning);
+  }
+  .risk-high {
+    background: var(--danger-light);
+    color: var(--danger);
+  }
+
+  /* DEADLINE STRIP */
   .deadline-strip {
     background: var(--white); border: 1px solid var(--border);
     border-radius: var(--radius); box-shadow: var(--shadow-sm);
@@ -448,7 +594,7 @@ $csrfToken = $_SESSION['csrf_token'];
   .deadline-item.ok       { background: #e8f6f3; color: #1a5f57; border-color: #9dd8d0; }
   .deadline-item i        { font-size: 11px; }
 
-  /* ─── ARTICLES TABLE ─── */
+  /* ARTICLES TABLE */
   .articles-table-wrap { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
   .table-head { display: grid; grid-template-columns: 2.2fr 1fr 1fr 120px 140px; background: var(--bg); border-bottom: 1px solid var(--border); }
   .th { padding: 12px 18px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
@@ -465,7 +611,7 @@ $csrfToken = $_SESSION['csrf_token'];
 
   .article-title-main { font-size: 14px; font-weight: 600; color: var(--navy); margin-bottom: 4px; line-height: 1.35; }
   .article-meta-row   { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .article-ref { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); background: var(--bg); padding: 2px 7px; border-radius: 3px; border: 1px solid var(--border); }
+  .article-ref { font-family: 'Monaco', monospace; font-size: 11px; color: var(--muted); background: var(--bg); padding: 2px 7px; border-radius: 3px; border: 1px solid var(--border); }
   .article-conf    { font-size: 12px; color: var(--text-light); }
   .td-domain       { font-size: 13px; color: var(--text-light); }
   .deadline-cell   { font-size: 12.5px; font-weight: 500; }
@@ -478,30 +624,32 @@ $csrfToken = $_SESSION['csrf_token'];
   .badge-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
   .badge.pending   { background: #fef8ec; color: #9a5f00;  border: 1px solid #f5d98a; }
   .badge.pending   .badge-dot { background: var(--warning); }
-  .badge.reviewing { background: #eef3fb; color: #1a4a7a;  border: 1px solid #b3cdf0; }
-  .badge.reviewing .badge-dot { background: var(--accent); }
   .badge.done      { background: #e8f6f3; color: #1a5f57;  border: 1px solid #9dd8d0; }
   .badge.done      .badge-dot { background: var(--success); }
   .badge.revised   { background: #f0f4ff; color: #3347bb;  border: 1px solid #bcc7fa; }
-  .badge.revised   .badge-dot { background: #5b6ef5; }
+  .badge.revised   .badge-dot { background: var(--purple); }
+  .badge.accepted  { background: #e8f6f3; color: #1a5f57; border: 1px solid #9dd8d0; }
+  .badge.accepted .badge-dot { background: var(--success); }
+  .badge.rejected  { background: #fdf2f2; color: #8b2020; border: 1px solid #f5b8b8; }
+  .badge.rejected .badge-dot { background: var(--danger); }
 
   /* ROW ACTIONS */
   .row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
   .action-btn {
-    height: 30px; padding: 0 10px; border-radius: var(--radius-sm);
+    height: 30px; padding: 0 12px; border-radius: var(--radius-sm);
     border: 1px solid var(--border); background: none;
     color: var(--muted); cursor: pointer; font-size: 12px;
-    display: flex; align-items: center; gap: 5px;
-    transition: all 0.15s; font-family: 'DM Sans', sans-serif; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 5px;
+    transition: all 0.15s; font-family: 'Inter', sans-serif; white-space: nowrap;
     text-decoration: none;
   }
   .action-btn:hover { background: var(--bg); color: var(--navy); border-color: var(--navy); }
   .action-btn.primary { background: var(--navy); color: var(--gold-light); border-color: var(--navy); }
   .action-btn.primary:hover { background: var(--navy-mid); }
-  .action-btn.revised-btn { border-color: #bcc7fa; color: #5b6ef5; }
+  .action-btn.revised-btn { border-color: #bcc7fa; color: var(--purple); }
   .action-btn.revised-btn:hover { background: #f0f4ff; color: #3347bb; }
 
-  /* ─── MODALS ─── */
+  /* MODALS */
   .modal-backdrop {
     position: fixed; inset: 0; background: rgba(13,33,55,0.5);
     backdrop-filter: blur(4px); z-index: 200;
@@ -510,10 +658,9 @@ $csrfToken = $_SESSION['csrf_token'];
   .modal-backdrop.open { display: flex; }
   .modal {
     background: var(--white); border-radius: var(--radius);
-    width: 100%; max-width: 580px; box-shadow: var(--shadow-md);
+    width: 100%; max-width: 650px; box-shadow: var(--shadow-md);
     animation: fadeUp 0.2s ease; max-height: 90vh; overflow-y: auto;
   }
-  .modal.modal-wide  { max-width: 700px; }
   .modal-header {
     padding: 20px 24px; border-bottom: 1px solid var(--border);
     display: flex; align-items: center; justify-content: space-between;
@@ -532,7 +679,7 @@ $csrfToken = $_SESSION['csrf_token'];
   .modal-footer {
     padding: 16px 24px; border-top: 1px solid var(--border);
     display: flex; justify-content: flex-end; gap: 10px;
-    position: sticky; bottom: 0; background: var(--white);
+    position: sticky; bottom: 0; background: var(--white); z-index: 1;
   }
   .modal-detail-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: flex-start; }
   .modal-detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); width: 110px; flex-shrink: 0; padding-top: 2px; }
@@ -542,7 +689,7 @@ $csrfToken = $_SESSION['csrf_token'];
     background: var(--navy); color: var(--gold-light);
     border: none; border-radius: var(--radius-sm);
     padding: 11px 22px; font-size: 13.5px; font-weight: 500;
-    font-family: 'DM Sans', sans-serif; cursor: pointer;
+    font-family: 'Inter', sans-serif; cursor: pointer;
     transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px;
     text-decoration: none; white-space: nowrap;
   }
@@ -551,11 +698,10 @@ $csrfToken = $_SESSION['csrf_token'];
     background: none; color: var(--text-light);
     border: 1px solid var(--border); border-radius: var(--radius-sm);
     padding: 9px 20px; font-size: 13.5px;
-    font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.15s;
+    font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.15s;
   }
   .btn-secondary:hover { border-color: var(--navy); color: var(--navy); background: var(--bg); }
 
-  /* DOWNLOAD ZONE */
   .download-zone {
     background: var(--bg); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 16px 20px;
@@ -569,7 +715,7 @@ $csrfToken = $_SESSION['csrf_token'];
   .download-btn {
     padding: 8px 18px; background: var(--navy); color: var(--gold-light);
     border: none; border-radius: var(--radius-sm); font-size: 13px;
-    font-family: 'DM Sans', sans-serif; cursor: pointer; transition: all 0.15s;
+    font-family: 'Inter', sans-serif; cursor: pointer; transition: all 0.15s;
     display: flex; align-items: center; gap: 7px; white-space: nowrap;
   }
   .download-btn:hover { background: var(--navy-mid); }
@@ -587,7 +733,6 @@ $csrfToken = $_SESSION['csrf_token'];
   .toast.error   { background: var(--danger); }
   .toast i { font-size: 15px; }
 
-  /* FOOTER */
   .footer { background: var(--navy); color: rgba(255,255,255,0.45); text-align: center; padding: 22px; font-size: 13px; margin-top: 48px; }
 
   @keyframes fadeUp   { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
@@ -599,6 +744,7 @@ $csrfToken = $_SESSION['csrf_token'];
     .status-cards-row { grid-template-columns: repeat(2,1fr); }
     .table-head,.article-row { grid-template-columns: 2fr 120px 140px; }
     .td-domain,.th:nth-child(2) { display:none; }
+    .summary-grid { grid-template-columns: 1fr; }
   }
   @media(max-width:650px) {
     .topbar { padding: 0 16px; }
@@ -613,9 +759,11 @@ $csrfToken = $_SESSION['csrf_token'];
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <a class="brand" href="reviewer_dashboard.php">
-    <div class="brand-icon">📋</div>
-    <span class="brand-name">ConfManager</span>
+     <a class="brand" href="#">
+    <div class="logo-wrapper">
+      <div class="logo-icon"><i class="fas fa-book-open"></i></div>
+      <span class="logo-text">ConfManager</span>
+    </div>
   </a>
   <nav class="nav-links">
     <a href="reviewer_dashboard.php" class="nav-link active">Tableau de bord</a>
@@ -629,7 +777,7 @@ $csrfToken = $_SESSION['csrf_token'];
       <input type="text" class="search-input" id="searchInput" placeholder="Rechercher…" onkeyup="searchArticles(event)">
     </div>
 
-    <!-- NOTIFICATION BELL WITH CATEGORIES -->
+    <!-- NOTIFICATION BELL -->
     <div class="notif-wrap">
       <button class="notif-btn" id="notifBtn" onclick="toggleNotif(event)">
         <i class="fas fa-bell"></i>
@@ -692,9 +840,7 @@ $csrfToken = $_SESSION['csrf_token'];
   </div>
 </header>
 
-<!-- ═══════════════════════════════════════════════
-     TABLEAU DE BORD
-═══════════════════════════════════════════════ -->
+<!-- MAIN CONTENT -->
 <main class="page">
   <div class="page-header">
     <div class="page-header-row">
@@ -738,6 +884,67 @@ $csrfToken = $_SESSION['csrf_token'];
       <div class="status-card-label">À re-évaluer</div>
     </a>
   </div>
+
+  <!-- EVALUATION SUMMARY CARDS -->
+  <?php if (!empty($assignments)): ?>
+  <div class="evaluation-summary">
+    <div class="summary-title">
+      <i class="fas fa-chart-line" style="color: var(--accent);"></i>
+      Évaluations automatiques
+    </div>
+    <div class="summary-grid">
+      <?php foreach (array_slice($assignments, 0, 3) as $a): 
+        $similarityScore = $a['similarity_score'] ?? 0;
+        $aiScore = $a['ai_score'] ?? 0;
+        $maxScore = max($similarityScore, $aiScore);
+        if ($maxScore > 60) {
+          $riskClass = 'high';
+          $riskText = 'Élevé';
+        } elseif ($maxScore > 30) {
+          $riskClass = 'medium';
+          $riskText = 'Moyen';
+        } else {
+          $riskClass = 'low';
+          $riskText = 'Faible';
+        }
+      ?>
+      <div class="eval-card">
+        <div class="eval-card-header">
+          <span class="eval-ref"><?= htmlspecialchars($a['ref']) ?></span>
+          <?php if ($a['display_status'] === 'done'): ?>
+            <span class="badge done" style="font-size: 10px;"><span class="badge-dot"></span>Évalué</span>
+          <?php elseif ($a['display_status'] === 'revised'): ?>
+            <span class="badge revised" style="font-size: 10px;"><span class="badge-dot"></span>Révisé</span>
+          <?php else: ?>
+            <span class="badge pending" style="font-size: 10px;"><span class="badge-dot"></span>En attente</span>
+          <?php endif; ?>
+        </div>
+        <div class="eval-title"><?= htmlspecialchars(substr($a['title'], 0, 50)) . (strlen($a['title']) > 50 ? '...' : '') ?></div>
+        <div class="score-row">
+          <span class="score-label">Similarité</span>
+          <span class="score-value <?= $similarityScore > 30 ? 'high' : ($similarityScore > 15 ? 'medium' : 'low') ?>"><?= $similarityScore ?>%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: <?= min(100, $similarityScore) ?>%; background: <?= $similarityScore > 30 ? 'var(--danger)' : ($similarityScore > 15 ? 'var(--warning)' : 'var(--success)') ?>;"></div>
+        </div>
+        <div class="score-row">
+          <span class="score-label">IA détectée</span>
+          <span class="score-value <?= $aiScore > 40 ? 'high' : ($aiScore > 20 ? 'medium' : 'low') ?>"><?= $aiScore ?>%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: <?= min(100, $aiScore) ?>%; background: <?= $aiScore > 40 ? 'var(--danger)' : ($aiScore > 20 ? 'var(--warning)' : 'var(--success)') ?>;"></div>
+        </div>
+        <div class="eval-footer">
+          <span class="risk-badge risk-<?= $riskClass ?>">Risque <?= $riskText ?></span>
+          <a href="review_article.php?id=<?= $a['id'] ?>" class="action-btn primary" style="padding: 6px 12px;">
+            <i class="fas fa-play"></i> Évaluer
+          </a>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+  <?php endif; ?>
 
   <!-- DEADLINES STRIP -->
   <div class="deadline-strip">
@@ -783,7 +990,7 @@ $csrfToken = $_SESSION['csrf_token'];
               <?php endif; ?>
             </div>
           </div>
-          <div class="td td-domain"><?= htmlspecialchars($a['specialty']) ?></div>
+          <div class="td td-domain"><?= htmlspecialchars($a['specialty'] ?? '—') ?></div>
           <div class="td">
             <span class="deadline-cell <?= $a['deadline_urgency'] ?>">
               <i class="fas fa-calendar-alt" style="margin-right:5px;opacity:.7"></i><?= htmlspecialchars($a['deadline_label']) ?>
@@ -799,11 +1006,11 @@ $csrfToken = $_SESSION['csrf_token'];
               <?php if ($a['display_status'] === 'done'): ?>
                 <button class="action-btn" onclick="openDetailModal(<?= $a['id'] ?>)"><i class="fas fa-eye"></i> Voir</button>
               <?php elseif ($a['display_status'] === 'revised'): ?>
-                <a href="review_articles.php?action=rereview&id=<?= $a['id'] ?>" class="action-btn revised-btn">
+                <a href="review_article.php?id=<?= $a['id'] ?>&action=rereview" class="action-btn revised-btn">
                   <i class="fas fa-sync-alt"></i> Re-évaluer
                 </a>
               <?php else: ?>
-                <a href="review_articles.php?action=review&id=<?= $a['id'] ?>" class="action-btn primary">
+                <a href="review_article.php?id=<?= $a['id'] ?>" class="action-btn primary">
                   <i class="fas fa-play"></i> Commencer
                 </a>
               <?php endif; ?>
@@ -823,7 +1030,7 @@ $csrfToken = $_SESSION['csrf_token'];
 
 <!-- MODAL: ARTICLE DETAIL -->
 <div class="modal-backdrop" id="articleDetailModal" onclick="closeOnBackdrop(event)">
-  <div class="modal modal-wide">
+  <div class="modal">
     <div class="modal-header">
       <div class="modal-title">Détail de l'article</div>
       <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
@@ -844,10 +1051,9 @@ $csrfToken = $_SESSION['csrf_token'];
 <script>
 // ==================== PHP DATA INJECTION ====================
 const assignments = <?= json_encode($assignments) ?>;
-const notifications = <?= json_encode($notifications) ?>;
+let notifications = <?= json_encode($notifications) ?>;
 
 let currentNotifFilter = 'all';
-let activeArticleId = null;
 
 // ==================== SEARCH FUNCTION ====================
 function searchArticles(event) {
@@ -869,7 +1075,7 @@ function searchArticles(event) {
 
 // ==================== ARTICLE DETAIL MODAL ====================
 function openDetailModal(id) {
-    const a = assignments.find(x => x.id === id);
+    const a = assignments.find(x => x.id == id);
     if (!a) return;
     
     const actionBtn = document.getElementById('detailActionBtn');
@@ -878,20 +1084,42 @@ function openDetailModal(id) {
     } else if (a.display_status === 'revised') {
         actionBtn.style.display = 'inline-flex';
         actionBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Re-évaluer';
-        actionBtn.href = `review_articles.php?action=rereview&id=${a.id}`;
+        actionBtn.href = `review_article.php?id=${a.id}&action=rereview`;
     } else {
         actionBtn.style.display = 'inline-flex';
         actionBtn.innerHTML = '<i class="fas fa-play"></i> Commencer l\'évaluation';
-        actionBtn.href = `review_articles.php?action=review&id=${a.id}`;
+        actionBtn.href = `review_article.php?id=${a.id}`;
     }
 
     const decisionHtml = a.submitted_decision ? `
         <div class="modal-detail-row">
             <span class="modal-detail-label">Décision</span>
             <span class="modal-detail-value">
-                <span class="badge ${a.submitted_decision === 'accepted' ? 'done' : 'pending'}">
+                <span class="badge ${a.submitted_decision === 'accepted' ? 'accepted' : 'rejected'}">
                     <span class="badge-dot"></span>${a.submitted_decision === 'accepted' ? 'Accepté' : 'Rejeté'}
                 </span>
+            </span>
+        </div>` : '';
+
+    const similarityHtml = a.similarity_score !== null && a.similarity_score !== undefined ? `
+        <div class="modal-detail-row">
+            <span class="modal-detail-label">Similarité</span>
+            <span class="modal-detail-value">
+                <span class="score-value ${a.similarity_score > 30 ? 'high' : (a.similarity_score > 15 ? 'medium' : 'low')}">${a.similarity_score}%</span>
+                <div class="progress-bar" style="width: 150px; display: inline-block; margin-left: 10px; vertical-align: middle;">
+                    <div class="progress-fill" style="width: ${Math.min(100, a.similarity_score)}%; background: ${a.similarity_score > 30 ? 'var(--danger)' : (a.similarity_score > 15 ? 'var(--warning)' : 'var(--success)')};"></div>
+                </div>
+            </span>
+        </div>` : '';
+
+    const aiHtml = a.ai_score !== null && a.ai_score !== undefined ? `
+        <div class="modal-detail-row">
+            <span class="modal-detail-label">IA détectée</span>
+            <span class="modal-detail-value">
+                <span class="score-value ${a.ai_score > 40 ? 'high' : (a.ai_score > 20 ? 'medium' : 'low')}">${a.ai_score}%</span>
+                <div class="progress-bar" style="width: 150px; display: inline-block; margin-left: 10px; vertical-align: middle;">
+                    <div class="progress-fill" style="width: ${Math.min(100, a.ai_score)}%; background: ${a.ai_score > 40 ? 'var(--danger)' : (a.ai_score > 20 ? 'var(--warning)' : 'var(--success)')};"></div>
+                </div>
             </span>
         </div>` : '';
 
@@ -899,20 +1127,18 @@ function openDetailModal(id) {
         <div class="download-zone">
             <i class="fas fa-file-pdf download-icon"></i>
             <div class="download-info">
-                <div class="download-name">${escapeHtml(a.file)}</div>
-                <div class="download-meta">PDF · Assigné le ${a.assigned_date_formatted}</div>
+                <div class="download-name">${escapeHtml(a.file || 'document.pdf')}</div>
+                <div class="download-meta">PDF · Assigné le ${a.assigned_date_formatted || '—'}</div>
             </div>
-            <button class="download-btn" onclick="showToast('Fonctionnalité de téléchargement disponible','info')">
-                <i class="fas fa-download"></i> Télécharger
-            </button>
+            ${a.file ? `<button class="download-btn" onclick="window.open('${escapeHtml(a.file)}', '_blank')"><i class="fas fa-download"></i> Télécharger</button>` : '<span class="download-meta">Fichier non disponible</span>'}
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Référence</span>
-            <span class="modal-detail-value"><span class="article-ref">${escapeHtml(a.ref)}</span></span>
+            <span class="modal-detail-value"><span class="article-ref">${escapeHtml(a.ref || '—')}</span></span>
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Titre</span>
-            <span class="modal-detail-value" style="font-weight:600;color:var(--navy)">${escapeHtml(a.title)}</span>
+            <span class="modal-detail-value" style="font-weight:600;color:var(--navy)">${escapeHtml(a.title || '—')}</span>
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Résumé</span>
@@ -920,23 +1146,25 @@ function openDetailModal(id) {
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Auteur(s)</span>
-            <span class="modal-detail-value">${escapeHtml(a.authors)}</span>
+            <span class="modal-detail-value">${escapeHtml(a.authors || '—')}</span>
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Conférence</span>
-            <span class="modal-detail-value">${escapeHtml(a.conf)}</span>
+            <span class="modal-detail-value">${escapeHtml(a.conf || '—')}</span>
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Spécialité</span>
-            <span class="modal-detail-value">${escapeHtml(a.specialty)}</span>
+            <span class="modal-detail-value">${escapeHtml(a.specialty || '—')}</span>
         </div>
+        ${similarityHtml}
+        ${aiHtml}
         <div class="modal-detail-row">
             <span class="modal-detail-label">Échéance</span>
-            <span class="modal-detail-value"><span class="deadline-cell ${a.deadline_urgency}"><i class="fas fa-calendar-alt" style="margin-right:5px"></i>${a.deadline_label}</span></span>
+            <span class="modal-detail-value"><span class="deadline-cell ${a.deadline_urgency || 'ok'}"><i class="fas fa-calendar-alt" style="margin-right:5px"></i>${a.deadline_label || '—'}</span></span>
         </div>
         <div class="modal-detail-row">
             <span class="modal-detail-label">Statut</span>
-            <span class="modal-detail-value"><span class="badge ${a.display_status}"><span class="badge-dot"></span>${a.status_label}</span></span>
+            <span class="modal-detail-value"><span class="badge ${a.display_status || 'pending'}"><span class="badge-dot"></span>${a.status_label || 'À évaluer'}</span></span>
         </div>
         ${decisionHtml}
     `;
@@ -1037,9 +1265,9 @@ function handleNotifClick(el) {
         const a = assignments.find(x => x.id === articleId);
         if (a) {
             if (type === 'revised') {
-                window.location.href = `review_articles.php?action=rereview&id=${articleId}`;
+                window.location.href = `review_article.php?id=${articleId}&action=rereview`;
             } else if (a.display_status !== 'done') {
-                window.location.href = `review_articles.php?action=review&id=${articleId}`;
+                window.location.href = `review_article.php?id=${articleId}`;
             } else {
                 openDetailModal(articleId);
             }
@@ -1066,7 +1294,7 @@ function markAllRead() {
 document.addEventListener('click', e => {
     const dd = document.getElementById('notifDropdown');
     const btn = document.getElementById('notifBtn');
-    if (!btn.contains(e.target) && !dd.contains(e.target)) {
+    if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
         dd.classList.remove('open');
         btn.classList.remove('active');
     }
@@ -1085,7 +1313,7 @@ function showToast(msg, type = 'info') {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
+    return String(str).replace(/[&<>]/g, function(m) {
         if (m === '&') return '&amp;';
         if (m === '<') return '&lt;';
         if (m === '>') return '&gt;';

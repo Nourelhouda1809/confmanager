@@ -109,7 +109,7 @@ $stmtAll = $pdo->prepare("
     FROM articles a
     JOIN conferences c ON c.id = a.conference_id
     JOIN users u ON u.id = a.utilisateur_id
-    WHERE a.statut IN ('accepte', 'accepte', 'published')
+    WHERE a.status IN ('accepte', 'accepte', 'published')
     ORDER BY a.date_soumission DESC
     LIMIT 100
 ");
@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 OR u.last_name LIKE :search
                 OR a.reference LIKE :search
                 OR c.name_fr LIKE :search)
-                AND a.statut IN ('accepte', 'published')
+                AND a.status IN ('accepte', 'published')
             ORDER BY a.date_soumission DESC
             LIMIT 100
         ");
@@ -235,6 +235,12 @@ $csrfToken = $_SESSION['csrf_token'];
     --shadow: 0 4px 20px rgba(13,33,55,0.10);
     --radius: 8px;
     --radius-sm: 4px;
+  }
+    body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -482,9 +488,11 @@ $csrfToken = $_SESSION['csrf_token'];
 
 <!-- TOPBAR -->
 <header class="topbar">
-  <a class="brand" href="reviewer_dashboard.php">
-    <div class="brand-icon">📋</div>
-    <span class="brand-name">ConfManager</span>
+    <a class="brand" href="#">
+    <div class="logo-wrapper">
+      <div class="logo-icon"><i class="fas fa-book-open"></i></div>
+      <span class="logo-text">ConfManager</span>
+    </div>
   </a>
   <nav class="nav-links">
     <a href="reviewer_dashboard.php" class="nav-link">Tableau de bord</a>

@@ -71,13 +71,13 @@ function getPendingDecisions() {
             u.institution as authorInstitution,
             c.id as conferenceId,
             c.name_fr as conferenceName,
-            a.statut as status,
+            a.status as status,
             (SELECT COUNT(*) FROM article_reviewers WHERE article_id = a.id) as reviewerCount,
             (SELECT COUNT(*) FROM evaluations WHERE article_id = a.id) as evaluationCount
             FROM articles a
             JOIN users u ON a.utilisateur_id = u.id
             JOIN conferences c ON a.conference_id = c.id
-            WHERE a.statut IN ('en_evaluation', 'assigne')
+            WHERE a.status IN ('en_evaluation', 'assigne')
             AND (SELECT COUNT(*) FROM article_reviewers WHERE article_id = a.id) >= 2
             AND a.id NOT IN (SELECT article_id FROM final_decisions)
             ORDER BY a.date_soumission DESC";

@@ -94,7 +94,7 @@ $whereConditions = ["utilisateur_id = :user_id"];
 $params = [':user_id' => $userId];
 
 if ($statusFilter !== 'all') {
-    $whereConditions[] = "statut = :status";
+    $whereConditions[] = "status = :status";
     $params[':status'] = $statusFilter;
 }
 
@@ -142,10 +142,10 @@ $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $statsQuery = "
     SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN statut = 'en_attente' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN statut = 'en_evaluation' THEN 1 ELSE 0 END) as reviewing,
-        SUM(CASE WHEN statut = 'accepte' THEN 1 ELSE 0 END) as accepted,
-        SUM(CASE WHEN statut = 'refuse' THEN 1 ELSE 0 END) as rejected
+        SUM(CASE WHEN status = 'en_attente' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'en_evaluation' THEN 1 ELSE 0 END) as reviewing,
+        SUM(CASE WHEN status = 'accepte' THEN 1 ELSE 0 END) as accepted,
+        SUM(CASE WHEN status = 'refuse' THEN 1 ELSE 0 END) as rejected
     FROM articles 
     WHERE utilisateur_id = :user_id
 ";
@@ -770,21 +770,21 @@ $currentNav = $navItems[$userRole] ?? $navItems['chercheur'];
                             </td>
                             <td><?= formatDate($article['date_soumission']); ?></td>
                             <td>
-                                <span class="badge <?= getStatusBadgeClass($article['statut']); ?>">
+                                <span class="badge <?= getStatusBadgeClass($article['status']); ?>">
                                     <span class="badge-dot"></span>
-                                    <?= getStatusLabel($article['statut']); ?>
+                                    <?= getStatusLabel($article['status']); ?>
                                 </span>
                             </td>
                             <td class="actions">
                                 <a href="article_details.php?id=<?= $article['id']; ?>" class="action-btn" title="Voir les détails">
                                     <i class="fas fa-eye"></i> Voir
                                 </a>
-                                <?php if ($article['statut'] === 'refuse' && !empty($article['reject_reason'])): ?>
-                                    <button class="action-btn" onclick="showRejectReason('<?= e(addslashes($article['reject_reason'])); ?>')" title="Motif du refus">
+                                <?php if ($article['status'] === 'refuse' && !empty($article['reject_reason'])): ?>
+                                    <button class="action-btn" onclick="showRejectReason('<?= e(addslashes($article['rejection_reason'])); ?>')" title="Motif du refus">
                                         <i class="fas fa-info-circle"></i> Motif
                                     </button>
                                 <?php endif; ?>
-                                <?php if ($article['statut'] === 'revised'): ?>
+                                <?php if ($article['status'] === 'revised'): ?>
                                     <a href="submit_revision.php?id=<?= $article['id']; ?>" class="action-btn primary" title="Soumettre une révision">
                                         <i class="fas fa-sync-alt"></i> Réviser
                                     </a>

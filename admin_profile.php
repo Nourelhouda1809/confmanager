@@ -66,7 +66,7 @@ $activeConferences = $db->query("SELECT COUNT(*) FROM conferences WHERE submissi
 $totalArticles = $db->query("SELECT COUNT(*) FROM articles")->fetchColumn() ?: 0;
 
 // Pending articles (en_attente status)
-$pendingArticles = $db->query("SELECT COUNT(*) FROM articles WHERE statut = 'en_attente'")->fetchColumn() ?: 0;
+$pendingArticles = $db->query("SELECT COUNT(*) FROM articles WHERE status= 'en_attente'")->fetchColumn() ?: 0;
 
 // Total reviewers
 $totalReviewers = $db->query("SELECT COUNT(*) FROM users WHERE role = 'reviewer'")->fetchColumn() ?: 0;
@@ -248,10 +248,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
 
 // ==================== ADMIN NAVIGATION ====================
 $nav_items = [
-    ['url' => 'admin_dashboard.php', 'label' => 'Tableau de bord', 'icon' => 'fas fa-chart-line'],
-    ['url' => 'admin_dashboard.php', 'label' => 'Conférences', 'icon' => 'fas fa-calendar-alt'],
+    ['url' => 'admin_dashboard.php', 'label' => 'Conférences & Articles', 'icon' => 'fas fa-chart-line'],
+    
     ['url' => 'evaluators.php', 'label' => 'Évaluateurs', 'icon' => 'fas fa-users'],
-    ['url' => 'final_decisions.php', 'label' => 'Décisions', 'icon' => 'fas fa-gavel'],
+    ['url' => 'final_decisions.php', 'label' => 'Décision Finale', 'icon' => 'fas fa-gavel'],
     ['url' => 'admin_profile.php', 'label' => 'Profil', 'icon' => 'fas fa-user', 'active' => true],
 ];
 ?>

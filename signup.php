@@ -94,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $first_name = cleanInput($_POST['first_name'] ?? '');
     $last_name = cleanInput($_POST['last_name'] ?? '');
     $email = cleanInput($_POST['email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $confirm_password = $_POST['confirm_password'] ?? '';
+    $password = trim($_POST['password'] ?? '');
+    $confirm_password = trim($_POST['confirm_password'] ?? '');
     $role = $_POST['role'] ?? 'chercheur';
     $accept_terms = isset($_POST['accept_terms']);
     
@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     
     // ============================================
-    // 5. INSERT INTO DATABASE WITH UNIQUE PASSWORD HASH
+    // 5. INSERT INTO DATABASE WITH SECURE PASSWORD HASH
     // ============================================
     
     if (empty($errors)) {
@@ -166,9 +166,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Generate unique username
             $username = generateUniqueUsername($db, $first_name, $last_name);
             
-            // IMPORTANT: Create UNIQUE hash for THIS user's password
-            // Each user gets their OWN hash based on their password
-                $hashed_password = $password;  
+            // IMPORTANT: Use password_hash for secure password storage
+            // This creates a unique hash for EACH user based on their password
+            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             
             // Insert user
             $query = "INSERT INTO users (
@@ -197,57 +197,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $grade = cleanInput($_POST['grade'] ?? '');
                 $keywords = cleanInput($_POST['keywords'] ?? '');
                 
-                $updateQuery = "UPDATE users SET 
-                                    laboratoire = :labo, 
-                                    grade = :grade, 
-                                    keywords = :keywords 
-                                WHERE id = :id";
-                $updateStmt = $db->prepare($updateQuery);
-                $updateStmt->execute([
-                    ':labo' => $labo,
-                    ':grade' => $grade,
-                    ':keywords' => $keywords,
-                    ':id' => $user_id
-                ]);
+                // Check if columns exist, if not add them
+                try {
+                    $updateQuery = "UPDATE users SET 
+                                        laboratoire = :labo, 
+                                        grade = :grade, 
+                                        keywords = :keywords 
+                                    WHERE id = :id";
+                    $updateStmt = $db->prepare($updateQuery);
+                    $updateStmt->execute([
+                        ':labo' => $labo,
+                        ':grade' => $grade,
+                        ':keywords' => $keywords,
+                        ':id' => $user_id
+                    ]);
+                } catch (PDOException $e) {
+                    // Columns might not exist, ignore
+                }
                 
             } elseif ($role === 'gestionnaire') {
                 $institution = cleanInput($_POST['institution'] ?? '');
                 $department = cleanInput($_POST['department'] ?? '');
                 
-                $updateQuery = "UPDATE users SET 
-                                    institution = :institution, 
-                                    department = :department 
-                                WHERE id = :id";
-                $updateStmt = $db->prepare($updateQuery);
-                $updateStmt->execute([
-                    ':institution' => $institution,
-                    ':department' => $department,
-                    ':id' => $user_id
-                ]);
+                try {
+                    $updateQuery = "UPDATE users SET 
+                                        institution = :institution, 
+                                        department = :department 
+                                    WHERE id = :id";
+                    $updateStmt = $db->prepare($updateQuery);
+                    $updateStmt->execute([
+                        ':institution' => $institution,
+                        ':department' => $department,
+                        ':id' => $user_id
+                    ]);
+                } catch (PDOException $e) {
+                    // Columns might not exist, ignore
+                }
                 
             } elseif ($role === 'reviewer') {
                 $service = cleanInput($_POST['service'] ?? '');
                 $specialties = cleanInput($_POST['specialties'] ?? '');
                 
-                $updateQuery = "UPDATE users SET 
-                                    service = :service, 
-                                    specialties = :specialties 
-                                WHERE id = :id";
-                $updateStmt = $db->prepare($updateQuery);
-                $updateStmt->execute([
-                    ':service' => $service,
-                    ':specialties' => $specialties,
-                    ':id' => $user_id
-                ]);
+                try {
+                    $updateQuery = "UPDATE users SET 
+                                        service = :service, 
+                                        specialties = :specialties 
+                                    WHERE id = :id";
+                    $updateStmt = $db->prepare($updateQuery);
+                    $updateStmt->execute([
+                        ':service' => $service,
+                        ':specialties' => $specialties,
+                        ':id' => $user_id
+                    ]);
+                } catch (PDOException $e) {
+                    // Columns might not exist, ignore
+                }
             }
             
-            // Destroy session and redirect to login
-            session_unset();
-            session_destroy();
+            // ============================================
+            // 6. AUTOMATIC LOGIN AFTER REGISTRATION
+            // ============================================
             
-            $success_message = urlencode("Inscription réussie ! Veuillez vous connecter avec votre email et le mot de passe que vous avez choisi.");
-            header("Location: login.php?success=" . $success_message);
-            exit();
+            // Create session for the newly registered user
+            $_SESSION['user_id'] = $user_id;
+            $_SESSION['user_email'] = $email;
+            $_SESSION['user_nom'] = $last_name;
+            $_SESSION['user_prenom'] = $first_name;
+            $_SESSION['username'] = $username;
+            $_SESSION['role'] = $role;
+            $_SESSION['logged_in'] = true;
+            $_SESSION['login_time'] = time();
+            
+            // Update last login time
+            try {
+                $updateLoginQuery = "UPDATE users SET last_login = NOW() WHERE id = :id";
+                $updateLoginStmt = $db->prepare($updateLoginQuery);
+                $updateLoginStmt->execute([':id' => $user_id]);
+            } catch (PDOException $e) {
+                // Ignore if column doesn't exist
+            }
+            
+            // ============================================
+            // 7. ROLE-BASED REDIRECTION
+            // ============================================
+            
+            // Redirect based on role (no output before header)
+            if ($role === 'chercheur') {
+                header("Location: submit_article.php");
+                exit();
+            } elseif ($role === 'reviewer') {
+                header("Location: reviewer_dashboard.php");
+                exit();
+            } elseif ($role === 'gestionnaire') {
+                header("Location: admin_dashboard.php");
+                exit();
+            } else {
+                // Fallback redirect
+                header("Location: submit_article.php");
+                exit();
+            }
             
         } catch (PDOException $e) {
             $error = 'Erreur lors de l\'inscription. Veuillez réessayer.';

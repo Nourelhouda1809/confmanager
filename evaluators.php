@@ -217,7 +217,7 @@ function getAllArticles() {
             c.name_fr as conferenceName,
             u.first_name as author,
             a.domaine as domain,
-            a.statut as status,
+            a.status as status,
             a.date_soumission as submissionDate,
             (SELECT COUNT(*) FROM article_reviewers ar WHERE ar.article_id = a.id) as reviewerCount,
             (SELECT GROUP_CONCAT(reviewer_id) FROM article_reviewers ar WHERE ar.article_id = a.id) as reviewerIds

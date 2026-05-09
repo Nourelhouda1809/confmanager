@@ -4,27 +4,96 @@
 // ConfManager - Université Hassiba Benbouali de Chlef
 // ============================================
 
-// IMPORTANT: session_start() MUST be at the very top before ANY output
+// ============================================
+// 1. FORCE FRESH SESSION - DESTROY ANY EXISTING SESSION
+// ============================================
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_destroy();
+}
 session_start();
+
+// Clear any residual session data
+$_SESSION = array();
+
+// Regenerate session ID for security
+session_regenerate_id(true);
 
 require_once 'config/database.php';
 
 // ============================================
-// 1. CHECK IF ALREADY LOGGED IN
+// 2. INITIALIZE VARIABLES
 // ============================================
+$error = '';
+$success = '';
+$email_value = '';
 
-$alreadyLoggedIn = false;
-$loggedInUser = '';
-if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
-    $alreadyLoggedIn = true;
-    $loggedInUser = ($_SESSION['user_prenom'] ?? '') . ' ' . ($_SESSION['user_nom'] ?? '');
+// ============================================
+// 3. CHECK FOR LOGOUT SUCCESS MESSAGE
+// ============================================
+if (isset($_GET['logout']) && $_GET['logout'] === 'success') {
+    $success = 'Vous avez été déconnecté avec succès.';
 }
 
 // ============================================
-// 2. FUNCTIONS
+// 4. CHECK REMEMBER ME COOKIE (But do NOT auto-login after logout)
 // ============================================
+// Important: Auto-login only works if user hasn't explicitly logged out
+$auto_login = true;
 
-function redirectToDashboard(string $role): void {
+// If logout just happened, prevent auto-login
+if (isset($_GET['logout']) && $_GET['logout'] === 'success') {
+    $auto_login = false;
+    // Clear remember cookie if it exists
+    if (isset($_COOKIE['remember_token'])) {
+        setcookie('remember_token', '', time() - 3600, '/');
+    }
+}
+
+if (!isset($_SESSION['user_id']) && $auto_login && isset($_COOKIE['remember_token'])) {
+    try {
+        $db = (new Database())->getConnection();
+        $token = $_COOKIE['remember_token'];
+        
+        $stmt = $db->prepare("
+            SELECT id, first_name, last_name, email, role, status, remember_token 
+            FROM users 
+            WHERE remember_token = :token AND remember_token IS NOT NULL
+        ");
+        $stmt->execute([':token' => $token]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($user && $user['status'] === 'active') {
+            // Create fresh session (no old data)
+            $_SESSION = array();
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_email'] = $user['email'];
+            $_SESSION['user_nom'] = $user['last_name'];
+            $_SESSION['user_prenom'] = $user['first_name'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['logged_in'] = true;
+            $_SESSION['login_time'] = time();
+            $_SESSION['session_id'] = session_id();
+            
+            // Update last login
+            $update = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = :id");
+            $update->execute([':id' => $user['id']]);
+            
+            // Redirect based on role
+            redirectByRole($user['role']);
+            exit();
+        } else {
+            // Invalid token - clear cookie
+            setcookie('remember_token', '', time() - 3600, '/');
+        }
+    } catch (Exception $e) {
+        error_log("Auto-login error: " . $e->getMessage());
+    }
+}
+
+// ============================================
+// 5. FUNCTION TO REDIRECT BY ROLE
+// ============================================
+function redirectByRole($role) {
     switch ($role) {
         case 'gestionnaire':
             header('Location: admin_dashboard.php');
@@ -40,141 +109,106 @@ function redirectToDashboard(string $role): void {
     exit();
 }
 
-function cleanInput(string $input): string {
-    return trim(htmlspecialchars($input, ENT_QUOTES, 'UTF-8'));
-}
-
 // ============================================
-// 3. INITIALIZATION
+// 6. PROCESS LOGIN FORM
 // ============================================
-
-$error = '';
-$success = '';
-
-if (isset($_GET['success'])) {
-    $success = urldecode($_GET['success']);
-}
-
-// ============================================
-// 4. LOGIN FORM PROCESSING
-// ============================================
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
-    $email = cleanInput($_POST['email'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $remember = isset($_POST['remember']);
     
+    // Store email for form repopulation
+    $email_value = $email;
+    
     // Validation
-    if (empty($email)) {
-        $error = 'Veuillez saisir votre adresse email.';
-    } elseif (empty($password)) {
-        $error = 'Veuillez saisir votre mot de passe.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Format d\'email invalide.';
+    if (empty($email) || empty($password)) {
+        $error = "Email et mot de passe obligatoires.";
     } else {
-        
-        $database = new Database();
-        $db = $database->getConnection();
-        
         try {
-            // Get user by email
-            $query = "SELECT id, username, email, password, first_name, last_name, role, status 
-                      FROM users 
-                      WHERE email = :email";
+            $db = (new Database())->getConnection();
             
-            $stmt = $db->prepare($query);
+            $stmt = $db->prepare("
+                SELECT id, first_name, last_name, email, password, role, status
+                FROM users
+                WHERE email = :email
+            ");
             $stmt->execute([':email' => $email]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            if ($user) {
-                // Check password - plain text comparison ONLY
-                if ($password === $user['password']) {
+            // Plain text password comparison
+            if ($user && $user['status'] === 'active' && $password === $user['password']) {
+                
+                // ============================================
+                // 7. START COMPLETELY FRESH SESSION
+                // ============================================
+                // Destroy any existing session data
+                session_unset();
+                session_destroy();
+                session_start();
+                session_regenerate_id(true);
+                
+                // Set fresh session variables
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_nom'] = $user['last_name'];
+                $_SESSION['user_prenom'] = $user['first_name'];
+                $_SESSION['role'] = $user['role'];
+                $_SESSION['logged_in'] = true;
+                $_SESSION['login_time'] = time();
+                $_SESSION['session_id'] = session_id();
+                
+                // ============================================
+                // 8. UPDATE LAST LOGIN
+                // ============================================
+                $update = $db->prepare("UPDATE users SET last_login = NOW() WHERE id = :id");
+                $update->execute([':id' => $user['id']]);
+                
+                // ============================================
+                // 9. HANDLE REMEMBER ME (New token, never reuse old)
+                // ============================================
+                if ($remember) {
+                    // Generate completely new token
+                    $token = bin2hex(random_bytes(32));
                     
-                    if ($user['status'] !== 'active') {
-                        $error = 'Votre compte n\'est pas actif. Veuillez contacter l\'administrateur.';
-                    } else {
-                        // Store all session variables
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['user_email'] = $user['email'];
-                        $_SESSION['user_nom'] = $user['last_name'];
-                        $_SESSION['user_prenom'] = $user['first_name'];
-                        $_SESSION['username'] = $user['username'];
-                        $_SESSION['role'] = $user['role'];
-                        $_SESSION['logged_in'] = true;
-                        $_SESSION['login_time'] = time();
-                        
-                        // Update last login
-                        $updateQuery = "UPDATE users SET last_login = NOW() WHERE id = :id";
-                        $updateStmt = $db->prepare($updateQuery);
-                        $updateStmt->execute([':id' => $user['id']]);
-                        
-                        // Remember me (optional)
-                        if ($remember) {
-                            $token = bin2hex(random_bytes(32));
-                            $tokenQuery = "UPDATE users SET remember_token = :token WHERE id = :id";
-                            $tokenStmt = $db->prepare($tokenQuery);
-                            $tokenStmt->execute([
-                                ':token' => $token,
-                                ':id' => $user['id']
-                            ]);
-                            setcookie('remember_token', $token, time() + (86400 * 30), '/', '', false, true);
-                        }
-                        
-                        // Redirect based on role
-                        redirectToDashboard($user['role']);
-                    }
+                    // Remove any old token first
+                    $clearToken = $db->prepare("UPDATE users SET remember_token = NULL WHERE id = :id");
+                    $clearToken->execute([':id' => $user['id']]);
+                    
+                    // Set new token
+                    $updateToken = $db->prepare("UPDATE users SET remember_token = :token WHERE id = :id");
+                    $updateToken->execute([
+                        ':token' => $token,
+                        ':id' => $user['id']
+                    ]);
+                    
+                    // Set secure cookie
+                    setcookie('remember_token', $token, time() + (86400 * 30), '/', '', false, true);
                 } else {
-                    $error = 'Email ou mot de passe incorrect.';
+                    // If remember me not checked, clear any existing token
+                    $clearToken = $db->prepare("UPDATE users SET remember_token = NULL WHERE id = :id");
+                    $clearToken->execute([':id' => $user['id']]);
+                    
+                    // Clear cookie if exists
+                    if (isset($_COOKIE['remember_token'])) {
+                        setcookie('remember_token', '', time() - 3600, '/');
+                    }
                 }
+                
+                // ============================================
+                // 10. REDIRECT BASED ON ROLE
+                // ============================================
+                redirectByRole($user['role']);
+                
             } else {
-                $error = 'Email ou mot de passe incorrect.';
+                $error = "Email ou mot de passe incorrect.";
             }
-            
         } catch (PDOException $e) {
-            $error = 'Erreur de connexion. Veuillez réessayer plus tard.';
+            $error = "Erreur de connexion. Veuillez réessayer.";
             error_log("Login error: " . $e->getMessage());
         }
     }
 }
-
-// ============================================
-// 5. REMEMBER ME COOKIE CHECK
-// ============================================
-
-if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
-    
-    $database = new Database();
-    $db = $database->getConnection();
-    $token = $_COOKIE['remember_token'];
-    
-    try {
-        $query = "SELECT id, username, email, first_name, last_name, role, status, remember_token 
-                  FROM users 
-                  WHERE remember_token = :token";
-        $stmt = $db->prepare($query);
-        $stmt->execute([':token' => $token]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($user && $user['status'] === 'active') {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_nom'] = $user['last_name'];
-            $_SESSION['user_prenom'] = $user['first_name'];
-            $_SESSION['username'] = $user['username'];
-            $_SESSION['role'] = $user['role'];
-            $_SESSION['logged_in'] = true;
-            
-            redirectToDashboard($user['role']);
-        }
-    } catch (PDOException $e) {
-        error_log("Remember token error: " . $e->getMessage());
-    }
-}
-
-// ============================================
-// 6. DISPLAY LOGIN PAGE
-// ============================================
 ?>
 
 <!DOCTYPE html>
@@ -292,18 +326,6 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
             border-radius: 2rem;
             margin-bottom: 1.2rem;
             border: 1px solid var(--secondary);
-        }
-
-        .alert-info {
-            background: #e0e7ff;
-            border: 1px solid #bcc7fa;
-            color: #3347bb;
-            margin-bottom: 1.5rem;
-            padding: 0.8rem 1rem;
-            border-radius: 0.8rem;
-            display: flex;
-            align-items: center;
-            gap: 0.8rem;
         }
 
         .form-group { margin-bottom: 1.5rem; }
@@ -443,14 +465,6 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
                 <p>Connectez-vous à votre espace</p>
             </div>
 
-            <?php if ($alreadyLoggedIn): ?>
-            <div class="alert-info">
-                <i class="fas fa-info-circle"></i>
-                <span>Vous êtes déjà connecté en tant que <strong><?= htmlspecialchars($loggedInUser) ?></strong>.</span>
-                <a href="logout.php" style="margin-left: auto; color: #3347bb;">Se déconnecter →</a>
-            </div>
-            <?php endif; ?>
-
             <?php if ($error): ?>
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-circle"></i>
@@ -471,7 +485,7 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
                     <div class="input-wrapper">
                         <i class="fas fa-envelope input-icon"></i>
                         <input type="email" class="form-input" id="email" name="email" 
-                               value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" 
+                               value="<?= htmlspecialchars($email_value) ?>" 
                                placeholder="votre.email@universite.dz" required>
                     </div>
                 </div>
@@ -534,6 +548,14 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
                 e.preventDefault();
                 this.classList.add('shake');
                 setTimeout(() => this.classList.remove('shake'), 300);
+            }
+        });
+        
+        // Clear any autofilled password on page load (security)
+        document.addEventListener('DOMContentLoaded', function() {
+            const passwordField = document.getElementById('password');
+            if (passwordField) {
+                passwordField.value = '';
             }
         });
     </script>
