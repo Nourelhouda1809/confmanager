@@ -1,472 +1,483 @@
 <?php
 /**
- * ConfManager - Evaluator Management
- * Fixed version matching the actual database schema
+ * evaluators.php - Backend API for ConfManager Evaluator Management
+ * 
+ * Endpoints:
+ *   GET  ?action=stats              - Get evaluator counts by status
+ *   GET  ?action=list               - List evaluators with pagination/filter
+ *   GET  ?action=topics             - List all topics
+ *   GET  ?action=conferences        - List all conferences
+ *   GET  ?action=articles           - List available articles for assignment
+ *   POST ?action=add                - Add new evaluator
+ *   POST ?action=assign             - Assign articles to evaluator
  */
 
-session_start();
+header('Content-Type: application/json; charset=utf-8');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
 
-// Database configuration - UPDATE THESE
-$db_host = 'localhost';
-$db_name = 'confmanager';
-$db_user = 'root';
-$db_pass = '';
-
-// Connect to database
-try {
-    $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch(PDOException $e) {
-    http_response_code(500);
-    die(json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]));
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
 }
 
-// ==================== API MODE ====================
-// If this is an AJAX/API request (has action parameter), handle it and exit
+// Database configuration - UPDATE THESE VALUES
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'confmanager');
+define('DB_USER', 'root');        // Change to your DB user
+define('DB_PASS', '');            // Change to your DB password
+define('DB_CHARSET', 'utf8mb4');
+
+// Response helper - FIXED to properly handle pagination in data structure
+function jsonResponse($success, $data = null, $error = null, $extra = null) {
+    $response = [
+        'success' => $success,
+        'data' => $data,
+        'error' => $error
+    ];
+    // Merge extra fields (like pagination) into the response at root level
+    if ($extra !== null && is_array($extra)) {
+        foreach ($extra as $key => $value) {
+            $response[$key] = $value;
+        }
+    }
+    echo json_encode($response);
+    exit;
+}
+
+// Database connection
+try {
+    $pdo = new PDO(
+        "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET,
+        DB_USER,
+        DB_PASS,
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]
+    );
+} catch (PDOException $e) {
+    jsonResponse(false, null, 'Database connection failed: ' . $e->getMessage());
+}
+
 $action = $_GET['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-if ($action) {
-    header('Content-Type: application/json; charset=utf-8');
-
-    // Auth check for API
-    if (!isset($_SESSION['user_id'])) {
-        http_response_code(401);
-        echo json_encode(['error' => 'Unauthorized - Please login', 'session_active' => false]);
-        exit;
-    }
-
-    // Verify user is a gestionnaire
-    $stmt = $pdo->prepare("SELECT id, role, email, first_name FROM users WHERE id = :id");
-    $stmt->execute([':id' => $_SESSION['user_id']]);
-    $user = $stmt->fetch();
-
-    if (!$user) {
-        http_response_code(403);
-        echo json_encode(['error' => 'User not found in database', 'user_id' => $_SESSION['user_id']]);
-        exit;
-    }
-
-    if ($user['role'] !== 'gestionnaire') {
-        http_response_code(403);
-        echo json_encode([
-            'error' => 'Forbidden - Manager access required',
-            'your_role' => $user['role'],
-            'required' => 'gestionnaire',
-            'user_id' => $_SESSION['user_id'],
-            'email' => $user['email']
-        ]);
-        exit;
-    }
-
+// ============================================================================
+// GET STATS
+// ============================================================================
+if ($action === 'stats' && $method === 'GET') {
     try {
-        switch ($action) {
-            case 'list':
-                getEvaluators($pdo);
-                break;
-            case 'add':
-                if ($method !== 'POST') {
-                    http_response_code(405);
-                    echo json_encode(['error' => 'POST required']);
-                    exit;
-                }
-                addEvaluator($pdo);
-                break;
-            case 'articles':
-                getArticles($pdo);
-                break;
-            case 'assign':
-                if ($method !== 'POST') {
-                    http_response_code(405);
-                    echo json_encode(['error' => 'POST required']);
-                    exit;
-                }
-                assignArticles($pdo);
-                break;
-            case 'stats':
-                getStats($pdo);
-                break;
-            case 'topics':
-                getTopics($pdo);
-                break;
-            case 'conferences':
-                getConferences($pdo);
-                break;
-            case 'me':
-                echo json_encode([
-                    'success' => true,
-                    'user_id' => $_SESSION['user_id'],
-                    'role' => $user['role'],
-                    'email' => $user['email'],
-                    'name' => $user['first_name']
-                ]);
-                break;
-            default:
-                http_response_code(400);
-                echo json_encode(['error' => 'Invalid action. Use: list, add, articles, assign, stats, topics, conferences, me']);
-        }
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['error' => $e->getMessage()]);
+        // Total reviewers
+        $total = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'reviewer'")->fetchColumn();
+        
+        // Active reviewers
+        $active = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'reviewer' AND status = 'active'")->fetchColumn();
+        
+        // Pending reviewers
+        $pending = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'reviewer' AND status = 'pending'")->fetchColumn();
+        
+        // Blocked reviewers
+        $blocked = $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'reviewer' AND status = 'blocked'")->fetchColumn();
+        
+        jsonResponse(true, [
+            'total' => (int)$total,
+            'active' => (int)$active,
+            'pending' => (int)$pending,
+            'blocked' => (int)$blocked
+        ]);
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
     }
-
-    // CRITICAL: Exit after API response so HTML is not output
-    exit;
 }
 
-// ==================== HTML PAGE MODE ====================
-// If no action parameter, show the HTML page (also requires auth)
-
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
-
-$stmt = $pdo->prepare("SELECT role FROM users WHERE id = :id");
-$stmt->execute([':id' => $_SESSION['user_id']]);
-$user = $stmt->fetch();
-
-if (!$user || $user['role'] !== 'gestionnaire') {
-    http_response_code(403);
-    die('<h1>Access Denied</h1><p>You must be a manager (gestionnaire) to access this page.</p><a href="logout.php">Logout</a>');
-}
-
-// ==================== FUNCTIONS ====================
-
-function getEvaluators($pdo) {
-    $search = $_GET['search'] ?? '';
+// ============================================================================
+// LIST EVALUATORS
+// ============================================================================
+elseif ($action === 'list' && $method === 'GET') {
     $filter = $_GET['filter'] ?? 'all';
-    $page = max(1, (int)($_GET['page'] ?? 1));
+    $search = $_GET['search'] ?? '';
+    $page = max(1, intval($_GET['page'] ?? 1));
     $perPage = 10;
     $offset = ($page - 1) * $perPage;
-
-    $sql = "
-        SELECT 
-            u.id,
-            CONCAT(u.first_name, ' ', u.last_name) as name,
-            u.email,
-            u.institution,
-            u.grade,
-            u.labo,
-            u.status,
-            u.role,
-            u.keywords as specialties,
-            COUNT(DISTINCT ar.article_id) as assigned_count
-        FROM users u
-        LEFT JOIN article_reviewers ar ON u.id = ar.evaluator_id
-        WHERE u.role IN ('reviewer', 'gestionnaire')
-    ";
-    $params = [];
-
-    if ($filter !== 'all') {
-        $sql .= " AND u.status = :filter";
-        $params[':filter'] = $filter;
-    }
-
-    if ($search) {
-        $sql .= " AND (u.first_name LIKE :search OR u.last_name LIKE :search OR u.email LIKE :search OR u.keywords LIKE :search)";
-        $params[':search'] = "%$search%";
-    }
-
-    $sql .= " GROUP BY u.id ORDER BY u.last_name, u.first_name LIMIT :limit OFFSET :offset";
-
-    $stmt = $pdo->prepare($sql);
-    foreach ($params as $key => $val) {
-        $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
-        $stmt->bindValue($key, $val, $type);
-    }
-    $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->execute();
-    $evaluators = $stmt->fetchAll();
-
-    foreach ($evaluators as &$eval) {
-        $eval['specialties'] = $eval['specialties'] ? array_map('trim', explode(',', $eval['specialties'])) : [];
-        $eval['assignedArticles'] = getEvaluatorArticles($pdo, $eval['id']);
-    }
-
-    $countSql = "SELECT COUNT(*) FROM users WHERE role IN ('reviewer', 'gestionnaire')";
-    $countParams = [];
-    if ($filter !== 'all') {
-        $countSql .= " AND status = :filter";
-        $countParams[':filter'] = $filter;
-    }
-    if ($search) {
-        $countSql .= " AND (first_name LIKE :search OR last_name LIKE :search OR email LIKE :search OR keywords LIKE :search)";
-        $countParams[':search'] = "%$search%";
-    }
-    $countStmt = $pdo->prepare($countSql);
-    foreach ($countParams as $key => $val) {
-        $type = is_int($val) ? PDO::PARAM_INT : PDO::PARAM_STR;
-        $countStmt->bindValue($key, $val, $type);
-    }
-    $countStmt->execute();
-    $total = $countStmt->fetchColumn();
-
-    echo json_encode([
-        'success' => true,
-        'data' => $evaluators,
-        'pagination' => [
-            'page' => $page,
-            'perPage' => $perPage,
-            'total' => $total,
-            'totalPages' => ceil($total / $perPage)
-        ]
-    ]);
-}
-
-function getEvaluatorArticles($pdo, $evaluatorId) {
-    $stmt = $pdo->prepare("
-        SELECT 
-            a.id,
-            a.title,
-            a.author,
-            t.name as topic,
-            a.status,
-            a.submission_date,
-            c.name_fr as conference_name,
-            COUNT(ar2.evaluator_id) as reviewer_count
-        FROM articles a
-        JOIN article_reviewers ar ON a.id = ar.article_id
-        LEFT JOIN topics t ON a.topic_id = t.id
-        LEFT JOIN conferences c ON a.conference_id = c.id
-        LEFT JOIN article_reviewers ar2 ON a.id = ar2.article_id
-        WHERE ar.evaluator_id = :eval_id
-        GROUP BY a.id
-        ORDER BY a.submission_date DESC
-    ");
-    $stmt->execute([':eval_id' => $evaluatorId]);
-    return $stmt->fetchAll();
-}
-
-function addEvaluator($pdo) {
-    $data = json_decode(file_get_contents('php://input'), true);
-
-    $firstName = trim($data['first_name'] ?? '');
-    $lastName = trim($data['last_name'] ?? '');
-    $email = trim($data['email'] ?? '');
-    $institution = trim($data['institution'] ?? '');
-    $grade = trim($data['grade'] ?? '');
-    $labo = trim($data['labo'] ?? '');
-    $keywords = trim($data['keywords'] ?? '');
-    $password = $data['password'] ?? bin2hex(random_bytes(4));
-
-    if (!$firstName || !$lastName || !$email) {
-        http_response_code(400);
-        echo json_encode(['error' => 'First name, last name and email are required']);
-        return;
-    }
-
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Invalid email format']);
-        return;
-    }
-
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE email = :email");
-    $stmt->execute([':email' => $email]);
-    if ($stmt->fetch()) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Email already exists']);
-        return;
-    }
-
-    $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-
-    $stmt = $pdo->prepare("
-        INSERT INTO users 
-        (first_name, last_name, email, password, role, status, institution, grade, labo, keywords, reviewer_code)
-        VALUES (:first_name, :last_name, :email, :password, 'reviewer', 'active', :institution, :grade, :labo, :keywords, :reviewer_code)
-    ");
-
-    $reviewerCode = 'REV-' . strtoupper(substr(md5(uniqid()), 0, 8));
-
-    $stmt->execute([
-        ':first_name' => $firstName,
-        ':last_name' => $lastName,
-        ':email' => $email,
-        ':password' => $passwordHash,
-        ':institution' => $institution,
-        ':grade' => $grade,
-        ':labo' => $labo,
-        ':keywords' => $keywords,
-        ':reviewer_code' => $reviewerCode
-    ]);
-
-    $evaluatorId = $pdo->lastInsertId();
-
-    echo json_encode([
-        'success' => true,
-        'message' => 'Evaluator added successfully',
-        'id' => $evaluatorId,
-        'reviewer_code' => $reviewerCode,
-        'temp_password' => $password
-    ]);
-}
-
-function getArticles($pdo) {
-    $evaluatorId = (int)($_GET['evaluator_id'] ?? 0);
-    $conference = $_GET['conference'] ?? 'all';
-    $topic = $_GET['topic'] ?? 'all';
-
-    $sql = "
-        SELECT 
-            a.id,
-            a.title,
-            a.author,
-            a.author_institution,
-            a.submission_date,
-            a.status,
-            t.id as topic_id,
-            t.name as topic,
-            c.id as conference_id,
-            c.name_fr as conference_name,
-            COUNT(DISTINCT ar.evaluator_id) as reviewer_count,
-            EXISTS(
-                SELECT 1 FROM article_reviewers 
-                WHERE article_id = a.id AND evaluator_id = :eval_id
-            ) as is_assigned
-        FROM articles a
-        LEFT JOIN topics t ON a.topic_id = t.id
-        LEFT JOIN conferences c ON a.conference_id = c.id
-        LEFT JOIN article_reviewers ar ON a.id = ar.article_id
-        WHERE a.status NOT IN ('accepted', 'rejected')
-    ";
-    $params = [':eval_id' => $evaluatorId];
-
-    if ($conference !== 'all') {
-        $sql .= " AND a.conference_id = :conf_id";
-        $params[':conf_id'] = (int)$conference;
-    }
-
-    if ($topic !== 'all') {
-        $sql .= " AND a.topic_id = :topic_id";
-        $params[':topic_id'] = (int)$topic;
-    }
-
-    $sql .= " GROUP BY a.id HAVING reviewer_count < 2 ORDER BY a.submission_date DESC";
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $articles = $stmt->fetchAll();
-
-    echo json_encode(['success' => true, 'data' => $articles]);
-}
-
-function assignArticles($pdo) {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $evaluatorId = (int)($data['evaluator_id'] ?? 0);
-    $articleIds = $data['article_ids'] ?? [];
-
-    if (!$evaluatorId || empty($articleIds)) {
-        http_response_code(400);
-        echo json_encode(['error' => 'Evaluator ID and article IDs are required']);
-        return;
-    }
-
-    $stmt = $pdo->prepare("SELECT id, status FROM users WHERE id = :id AND role IN ('reviewer', 'gestionnaire')");
-    $stmt->execute([':id' => $evaluatorId]);
-    $evaluator = $stmt->fetch();
-
-    if (!$evaluator) {
-        http_response_code(404);
-        echo json_encode(['error' => 'Evaluator not found']);
-        return;
-    }
-
-    if ($evaluator['status'] !== 'active') {
-        http_response_code(400);
-        echo json_encode(['error' => 'Evaluator must be active to receive assignments']);
-        return;
-    }
-
-    $pdo->beginTransaction();
-
+    
     try {
-        $assigned = [];
-        $skipped = [];
-
-        foreach ($articleIds as $articleId) {
-            $articleId = (int)$articleId;
-
-            $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM article_reviewers WHERE article_id = :art_id");
-            $stmt->execute([':art_id' => $articleId]);
-            $count = $stmt->fetch()['count'];
-
-            if ($count >= 2) {
-                $stmt = $pdo->prepare("SELECT title FROM articles WHERE id = :id");
-                $stmt->execute([':id' => $articleId]);
-                $skipped[] = $stmt->fetch()['title'];
-                continue;
-            }
-
-            $stmt = $pdo->prepare("
-                SELECT 1 FROM article_reviewers 
-                WHERE article_id = :art_id AND evaluator_id = :eval_id
-            ");
-            $stmt->execute([':art_id' => $articleId, ':eval_id' => $evaluatorId]);
-            if ($stmt->fetch()) {
-                continue;
-            }
-
-            $stmt = $pdo->prepare("
-                INSERT INTO article_reviewers (article_id, evaluator_id, assigned_at)
-                VALUES (:art_id, :eval_id, NOW())
-            ");
-            $stmt->execute([':art_id' => $articleId, ':eval_id' => $evaluatorId]);
-
-            $stmt = $pdo->prepare("
-                UPDATE articles 
-                SET status = CASE 
-                    WHEN status = 'new' THEN 'assigned'
-                    ELSE status 
-                END
-                WHERE id = :id
-            ");
-            $stmt->execute([':id' => $articleId]);
-
-            $assigned[] = $articleId;
+        $where = ["u.role = 'reviewer'"];
+        $params = [];
+        
+        // Status filter
+        if ($filter !== 'all' && in_array($filter, ['active', 'pending', 'blocked'])) {
+            $where[] = "u.status = :status";
+            $params[':status'] = $filter;
         }
-
-        $pdo->commit();
-
-        echo json_encode([
-            'success' => true,
-            'assigned' => count($assigned),
-            'skipped' => $skipped,
-            'message' => count($assigned) . ' article(s) assigned successfully'
+        
+        // Search filter
+        if (!empty($search)) {
+            $where[] = "(u.first_name LIKE :search OR u.last_name LIKE :search OR u.email LIKE :search OR u.institution LIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+        
+        $whereClause = implode(' AND ', $where);
+        
+        // Count total
+        $countSql = "SELECT COUNT(*) FROM users u WHERE $whereClause";
+        $countStmt = $pdo->prepare($countSql);
+        $countStmt->execute($params);
+        $totalItems = $countStmt->fetchColumn();
+        $totalPages = ceil($totalItems / $perPage);
+        
+        // Fetch evaluators
+        $sql = "SELECT 
+                    u.id,
+                    CONCAT(u.first_name, ' ', u.last_name) as name,
+                    u.email,
+                    u.institution,
+                    u.grade,
+                    u.labo,
+                    u.keywords as specialties_raw,
+                    u.status,
+                    u.created_at
+                FROM users u
+                WHERE $whereClause
+                ORDER BY u.created_at DESC
+                LIMIT :limit OFFSET :offset";
+        
+        $stmt = $pdo->prepare($sql);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        $evaluators = $stmt->fetchAll();
+        
+        // Process each evaluator
+        foreach ($evaluators as &$eval) {
+            // Parse specialties from keywords (comma-separated)
+            $eval['specialties'] = [];
+            if (!empty($eval['specialties_raw'])) {
+                $eval['specialties'] = array_map('trim', explode(',', $eval['specialties_raw']));
+            }
+            unset($eval['specialties_raw']);
+            
+            // Fetch assigned articles with reviewer counts
+            $articleSql = "SELECT 
+                                a.id,
+                                a.title,
+                                a.author,
+                                a.submission_date,
+                                a.status as article_status,
+                                t.name as topic,
+                                c.name_fr as conference_name,
+                                (SELECT COUNT(*) FROM article_reviewers ar2 WHERE ar2.article_id = a.id) as reviewer_count
+                            FROM article_reviewers ar
+                            JOIN articles a ON ar.article_id = a.id
+                            LEFT JOIN topics t ON a.topic_id = t.id
+                            LEFT JOIN conferences c ON a.conference_id = c.id
+                            WHERE ar.evaluator_id = :eval_id
+                            ORDER BY ar.assigned_at DESC";
+            
+            $articleStmt = $pdo->prepare($articleSql);
+            $articleStmt->execute([':eval_id' => $eval['id']]);
+            $eval['assignedArticles'] = $articleStmt->fetchAll();
+        }
+        
+        // FIX: Return pagination as separate field for frontend compatibility
+        jsonResponse(true, $evaluators, null, [
+            'pagination' => [
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalItems' => (int)$totalItems,
+                'totalPages' => $totalPages
+            ]
         ]);
-
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        throw $e;
+        
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
     }
 }
 
-function getStats($pdo) {
-    $stats = [];
-    $stmt = $pdo->query("SELECT COUNT(*) as total FROM users WHERE role IN ('reviewer', 'gestionnaire')");
-    $stats['total'] = $stmt->fetchColumn();
-    $stmt = $pdo->query("SELECT COUNT(*) as active FROM users WHERE role IN ('reviewer', 'gestionnaire') AND status = 'active'");
-    $stats['active'] = $stmt->fetchColumn();
-    $stmt = $pdo->query("SELECT COUNT(*) as pending FROM users WHERE role IN ('reviewer', 'gestionnaire') AND status = 'pending'");
-    $stats['pending'] = $stmt->fetchColumn();
-    $stmt = $pdo->query("SELECT COUNT(*) as blocked FROM users WHERE role IN ('reviewer', 'gestionnaire') AND status = 'blocked'");
-    $stats['blocked'] = $stmt->fetchColumn();
-    echo json_encode(['success' => true, 'data' => $stats]);
+// ============================================================================
+// LIST TOPICS
+// ============================================================================
+elseif ($action === 'topics' && $method === 'GET') {
+    try {
+        $stmt = $pdo->query("SELECT id, name FROM topics ORDER BY name ASC");
+        jsonResponse(true, $stmt->fetchAll());
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
+    }
 }
 
-function getTopics($pdo) {
-    $stmt = $pdo->query("SELECT id, name FROM topics ORDER BY name");
-    $topics = $stmt->fetchAll();
-    echo json_encode(['success' => true, 'data' => $topics]);
+// ============================================================================
+// LIST CONFERENCES
+// ============================================================================
+elseif ($action === 'conferences' && $method === 'GET') {
+    try {
+        $stmt = $pdo->query("SELECT id, name_fr as name FROM conferences ORDER BY created_at DESC");
+        jsonResponse(true, $stmt->fetchAll());
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
+    }
 }
 
-function getConferences($pdo) {
-    $stmt = $pdo->query("SELECT id, name_fr as name FROM conferences ORDER BY name_fr");
-    $conferences = $stmt->fetchAll();
-    echo json_encode(['success' => true, 'data' => $conferences]);
+// ============================================================================
+// LIST ARTICLES FOR ASSIGNMENT
+// ============================================================================
+elseif ($action === 'articles' && $method === 'GET') {
+    $evaluatorId = intval($_GET['evaluator_id'] ?? 0);
+    $conferenceFilter = $_GET['conference'] ?? 'all';
+    $topicFilter = $_GET['topic'] ?? 'all';
+    
+    if ($evaluatorId <= 0) {
+        jsonResponse(false, null, 'Invalid evaluator ID');
+    }
+    
+    try {
+        $where = ["a.status IN ('new', 'assigned', 'review')"];
+        $params = [':eval_id' => $evaluatorId];
+        
+        // Conference filter
+        if ($conferenceFilter !== 'all' && is_numeric($conferenceFilter)) {
+            $where[] = "a.conference_id = :conf_id";
+            $params[':conf_id'] = intval($conferenceFilter);
+        }
+        
+        // Topic filter
+        if ($topicFilter !== 'all' && is_numeric($topicFilter)) {
+            $where[] = "a.topic_id = :topic_id";
+            $params[':topic_id'] = intval($topicFilter);
+        }
+        
+        // CRITICAL FIX: Only show articles with LESS than 2 reviewers
+        // AND articles not already assigned to this evaluator
+        $whereClause = implode(' AND ', $where);
+        
+        $sql = "SELECT 
+                    a.id,
+                    a.title,
+                    a.author,
+                    a.submission_date,
+                    a.status,
+                    t.name as topic,
+                    c.name_fr as conference_name,
+                    (SELECT COUNT(*) FROM article_reviewers ar2 WHERE ar2.article_id = a.id) as reviewer_count,
+                    EXISTS(SELECT 1 FROM article_reviewers ar3 WHERE ar3.article_id = a.id AND ar3.evaluator_id = :eval_id) as is_assigned
+                FROM articles a
+                LEFT JOIN topics t ON a.topic_id = t.id
+                LEFT JOIN conferences c ON a.conference_id = c.id
+                WHERE $whereClause
+                HAVING reviewer_count < 2 OR is_assigned = 1
+                ORDER BY a.submission_date DESC";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $articles = $stmt->fetchAll();
+        
+        // Convert boolean to proper types
+        foreach ($articles as &$article) {
+            $article['reviewer_count'] = (int)$article['reviewer_count'];
+            $article['is_assigned'] = (bool)$article['is_assigned'];
+            // Format date for frontend
+            $article['submission_date'] = date('Y-m-d', strtotime($article['submission_date']));
+        }
+        
+        jsonResponse(true, $articles);
+        
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
+    }
+}
+
+// ============================================================================
+// ADD EVALUATOR
+// ============================================================================
+elseif ($action === 'add' && $method === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!$input) {
+        jsonResponse(false, null, 'Invalid JSON input');
+    }
+    
+    // Validation
+    $firstName = trim($input['first_name'] ?? '');
+    $lastName = trim($input['last_name'] ?? '');
+    $email = trim($input['email'] ?? '');
+    $institution = trim($input['institution'] ?? '');
+    $grade = trim($input['grade'] ?? '');
+    $labo = trim($input['labo'] ?? '');
+    $keywords = trim($input['keywords'] ?? '');
+    
+    if (empty($firstName) || empty($lastName) || empty($email)) {
+        jsonResponse(false, null, 'First name, last name and email are required');
+    }
+    
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(false, null, 'Invalid email format');
+    }
+    
+    try {
+        // Check if email already exists
+        $checkStmt = $pdo->prepare("SELECT id FROM users WHERE email = :email");
+        $checkStmt->execute([':email' => $email]);
+        if ($checkStmt->fetch()) {
+            jsonResponse(false, null, 'An evaluator with this email already exists');
+        }
+        
+        // Generate password hash (temporary password - evaluator will reset)
+        $tempPassword = bin2hex(random_bytes(8));
+        $passwordHash = password_hash($tempPassword, PASSWORD_DEFAULT);
+        
+        // Generate reviewer code
+        $reviewerCode = 'REV' . strtoupper(substr(md5(uniqid()), 0, 6));
+        
+        // Insert new reviewer
+        $sql = "INSERT INTO users 
+                (first_name, last_name, email, password, role, status, institution, grade, labo, keywords, reviewer_code, created_at) 
+                VALUES 
+                (:first_name, :last_name, :email, :password, 'reviewer', 'active', :institution, :grade, :labo, :keywords, :reviewer_code, NOW())";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':first_name' => $firstName,
+            ':last_name' => $lastName,
+            ':email' => $email,
+            ':password' => $passwordHash,
+            ':institution' => $institution,
+            ':grade' => $grade,
+            ':labo' => $labo,
+            ':keywords' => $keywords,
+            ':reviewer_code' => $reviewerCode
+        ]);
+        
+        $newId = $pdo->lastInsertId();
+        
+        // TODO: Send invitation email here
+        // mail($email, 'ConfManager - Invitation', "Your reviewer code: $reviewerCode\nTemp password: $tempPassword");
+        
+        jsonResponse(true, [
+            'id' => $newId,
+            'reviewer_code' => $reviewerCode,
+            'message' => 'Evaluator added successfully'
+        ]);
+        
+    } catch (PDOException $e) {
+        jsonResponse(false, null, $e->getMessage());
+    }
+}
+
+// ============================================================================
+// ASSIGN ARTICLES
+// ============================================================================
+elseif ($action === 'assign' && $method === 'POST') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!$input) {
+        jsonResponse(false, null, 'Invalid JSON input');
+    }
+    
+    $evaluatorId = intval($input['evaluator_id'] ?? 0);
+    $articleIds = $input['article_ids'] ?? [];
+    
+    if ($evaluatorId <= 0 || empty($articleIds) || !is_array($articleIds)) {
+        jsonResponse(false, null, 'Invalid evaluator ID or article IDs');
+    }
+    
+    // Sanitize article IDs
+    $articleIds = array_map('intval', $articleIds);
+    $articleIds = array_filter($articleIds, fn($id) => $id > 0);
+    
+    if (empty($articleIds)) {
+        jsonResponse(false, null, 'No valid article IDs provided');
+    }
+    
+    try {
+        $pdo->beginTransaction();
+        
+        $assigned = 0;
+        $skipped = [];
+        
+        foreach ($articleIds as $articleId) {
+            // Check if article exists and has less than 2 reviewers
+            $checkStmt = $pdo->prepare("
+                SELECT a.status,
+                       (SELECT COUNT(*) FROM article_reviewers WHERE article_id = a.id) as reviewer_count
+                FROM articles a
+                WHERE a.id = :article_id
+                FOR UPDATE
+            ");
+            $checkStmt->execute([':article_id' => $articleId]);
+            $article = $checkStmt->fetch();
+            
+            if (!$article) {
+                $skipped[] = ['id' => $articleId, 'reason' => 'Article not found'];
+                continue;
+            }
+            
+            if ($article['reviewer_count'] >= 2) {
+                $skipped[] = ['id' => $articleId, 'reason' => 'Article already has 2 reviewers'];
+                continue;
+            }
+            
+            // Check if already assigned to this evaluator
+            $dupStmt = $pdo->prepare("
+                SELECT id FROM article_reviewers 
+                WHERE article_id = :article_id AND evaluator_id = :eval_id
+            ");
+            $dupStmt->execute([
+                ':article_id' => $articleId,
+                ':eval_id' => $evaluatorId
+            ]);
+            
+            if ($dupStmt->fetch()) {
+                $skipped[] = ['id' => $articleId, 'reason' => 'Already assigned to this evaluator'];
+                continue;
+            }
+            
+            // Insert assignment
+            $insertStmt = $pdo->prepare("
+                INSERT INTO article_reviewers (article_id, evaluator_id, assigned_at)
+                VALUES (:article_id, :eval_id, NOW())
+            ");
+            $insertStmt->execute([
+                ':article_id' => $articleId,
+                ':eval_id' => $evaluatorId
+            ]);
+            
+            // Update article status if needed
+            $newCount = $article['reviewer_count'] + 1;
+            if ($newCount >= 2 && $article['status'] === 'new') {
+                $updateStmt = $pdo->prepare("
+                    UPDATE articles SET status = 'assigned' WHERE id = :article_id
+                ");
+                $updateStmt->execute([':article_id' => $articleId]);
+            }
+            
+            $assigned++;
+        }
+        
+        $pdo->commit();
+        
+        jsonResponse(true, [
+            'assigned' => $assigned,
+            'skipped' => $skipped,
+            'message' => "$assigned article(s) assigned successfully"
+        ]);
+        
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        jsonResponse(false, null, $e->getMessage());
+    }
+}
+
+// ============================================================================
+// UNKNOWN ACTION
+// ============================================================================
+else {
+    jsonResponse(false, null, 'Unknown action or method: ' . $action);
 }
 ?>
 <!DOCTYPE html>
@@ -582,11 +593,11 @@ function getConferences($pdo) {
   .toast.success { background: var(--success); }
   .toast.error { background: var(--danger); }
   .toast.warning { background: var(--warning); }
-  .debug-info { background: #fff3cd; border: 1px solid #ffc107; border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 12px; color: #856404; }
   @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 900px) { .topbar { padding: 0 16px; } .nav-links { display: none; } .page { padding: 24px 16px; } }
 </style>
+<base target="_blank">
 </head>
 <body>
 
@@ -614,11 +625,6 @@ function getConferences($pdo) {
       <button class="btn-primary" id="openAddEvaluatorModal"><i class="fas fa-user-plus"></i> Ajouter un évaluateur</button>
     </div>
     <p>Gérez les évaluateurs et assignez-les aux articles (max 2 évaluateurs par article)</p>
-  </div>
-
-  <!-- Debug info panel - remove after testing -->
-  <div class="debug-info" id="debugPanel" style="display: none;">
-    <strong><i class="fas fa-bug"></i> Debug:</strong> <span id="debugText"></span>
   </div>
 
   <div class="filters-bar">
@@ -701,11 +707,6 @@ function getConferences($pdo) {
     setTimeout(() => toast.classList.add('show'), 10);
     setTimeout(() => toast.classList.remove('show'), 3000);
   }
-  function showDebug(info) {
-    const panel = document.getElementById('debugPanel');
-    document.getElementById('debugText').textContent = JSON.stringify(info);
-    panel.style.display = 'block';
-  }
   async function apiGet(action, params = {}) {
     const query = new URLSearchParams({ action, ...params });
     const res = await fetch(`evaluators.php?${query}`); return res.json();
@@ -729,22 +730,6 @@ function getConferences($pdo) {
   }
   function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
 
-  async function checkSession() {
-    try {
-      const res = await apiGet('me');
-      if (res.success) {
-        console.log('Session OK:', res);
-        showDebug({ session: 'OK', user: res.email, role: res.role });
-      } else {
-        console.error('Session error:', res);
-        showDebug({ session: 'ERROR', error: res.error });
-      }
-    } catch (e) {
-      console.error('Network error:', e);
-      showDebug({ session: 'NETWORK ERROR', error: e.message });
-    }
-  }
-
   async function loadStats() {
     try { const res = await apiGet('stats'); if (res.success) {
       document.getElementById('filterAllCount').textContent = res.data.total;
@@ -759,12 +744,7 @@ function getConferences($pdo) {
     try {
       const search = document.getElementById('searchEvaluator').value;
       const res = await apiGet('list', { filter: currentFilter, search: search, page: currentPage });
-      if (!res.success) {
-        if (res.error && res.error.includes('Forbidden')) {
-          showDebug({ error: res.error, your_role: res.your_role, required: res.required, user_id: res.user_id });
-        }
-        throw new Error(res.error);
-      }
+      if (!res.success) throw new Error(res.error);
       renderTable(res.data, res.pagination);
     } catch (e) {
       document.getElementById('evaluatorTableBody').innerHTML = 
@@ -825,12 +805,7 @@ function getConferences($pdo) {
     try {
       const res = await apiPost('add', { first_name: firstName, last_name: lastName, email, institution, grade, labo, keywords });
       if (res.success) { showToast('Évaluateur ajouté avec succès !'); closeEvaluatorModal(); await loadStats(); await loadEvaluators(); }
-      else {
-        if (res.error && res.error.includes('Forbidden')) {
-          showDebug({ error: res.error, your_role: res.your_role, required: res.required, user_id: res.user_id });
-        }
-        showToast(res.error || 'Erreur', 'error');
-      }
+      else { showToast(res.error || 'Erreur', 'error'); }
     } catch (e) { showToast('Erreur réseau: ' + e.message, 'error'); }
     finally { showLoading(false); }
   }
@@ -897,8 +872,8 @@ function getConferences($pdo) {
     try {
       const res = await apiPost('assign', { evaluator_id: currentEvaluatorId, article_ids: selectedIds });
       if (res.success) {
-        let msg = `${res.assigned} article(s) assigné(s).`;
-        if (res.skipped && res.skipped.length > 0) msg += ` ${res.skipped.length} ignoré(s).`;
+        let msg = `${res.data.assigned} article(s) assigné(s).`;
+        if (res.data.skipped && res.data.skipped.length > 0) msg += ` ${res.data.skipped.length} ignoré(s).`;
         showToast(msg); closeAssignModal(); await loadEvaluators();
       } else { showToast(res.error || 'Erreur', 'error'); }
     } catch (e) { showToast('Erreur réseau: ' + e.message, 'error'); }
@@ -929,10 +904,7 @@ function getConferences($pdo) {
   window.closeAssignModal = closeAssignModal;
   window.confirmAssign = confirmAssign;
 
-  // Check session on load and load data
-  checkSession();
-  loadStats();
-  loadEvaluators();
+  loadStats(); loadEvaluators();
 </script>
 </body>
 </html>
