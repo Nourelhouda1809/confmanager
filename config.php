@@ -1,4 +1,5 @@
 <?php
+
 // config.php - Database connection & session start
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'confmanager');
@@ -15,7 +16,6 @@ try {
     die("Database connection failed!");
 }
 
-session_start();
 
 // Helper function to check if user is logged in
 function isLoggedIn() {

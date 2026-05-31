@@ -1,3 +1,172 @@
+<?php
+session_start();
+require_once 'config.php';
+
+// Check if user is logged in and is a manager
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'gestionnaire') {
+    header('Location: login.php');
+    exit;
+}
+
+$user_id = $_SESSION['user_id'];
+
+// Database connection
+try {
+    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch (PDOException $e) {
+    die("Connection failed: " . $e->getMessage());
+}
+
+// Handle AJAX request to submit final decision
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_decision') {
+    header('Content-Type: application/json');
+    
+    $article_id = intval($_POST['article_id']);
+    $decision = $_POST['decision'];
+    $comment = trim($_POST['comment']);
+    
+    // Validate decision
+    $valid_decisions = ['accepted', 'revision', 'rejected'];
+    if (!in_array($decision, $valid_decisions)) {
+        echo json_encode(['success' => false, 'message' => 'Décision invalide']);
+        exit;
+    }
+    
+    if (strlen($comment) < 10) {
+        echo json_encode(['success' => false, 'message' => 'Le commentaire doit contenir au moins 10 caractères']);
+        exit;
+    }
+    
+    try {
+        $pdo->beginTransaction();
+        
+        // Update article with final decision
+        $stmt = $pdo->prepare("
+            UPDATE articles 
+            SET status = CASE 
+                WHEN ? = 'accepted' THEN 'accepted'
+                WHEN ? = 'revision' THEN 'review'
+                ELSE 'rejected'
+            END,
+            final_decision = ?,
+            final_comment = ?,
+            decision_date = NOW(),
+            decided_by = ?
+            WHERE id = ?
+        ");
+        $stmt->execute([$decision, $decision, $decision, $comment, $user_id, $article_id]);
+        
+        // Get article and author info for email
+        $stmt = $pdo->prepare("
+            SELECT a.*, u.email as author_email, u.first_name, u.last_name, c.name_fr as conference_name
+            FROM articles a
+            JOIN users u ON a.author_email = u.email
+            JOIN conferences c ON a.conference_id = c.id
+            WHERE a.id = ?
+        ");
+        $stmt->execute([$article_id]);
+        $article = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($article) {
+            // Send email notification to researcher
+            $decision_texts = [
+                'accepted' => 'accepté pour publication',
+                'revision' => 'soumis à révisions',
+                'rejected' => 'refusé'
+            ];
+            
+            $to = $article['author_email'];
+            $subject = "Décision finale - " . $article['title'];
+            $message = "
+                <html>
+                <head><title>Décision finale</title></head>
+                <body>
+                    <h2>Cher(e) " . htmlspecialchars($article['first_name'] . ' ' . $article['last_name']) . ",</h2>
+                    <p>Votre article soumis à la conférence <strong>" . htmlspecialchars($article['conference_name']) . "</strong> a été <strong>" . $decision_texts[$decision] . "</strong>.</p>
+                    <p><strong>Titre :</strong> " . htmlspecialchars($article['title']) . "</p>
+                    <p><strong>Commentaire du gestionnaire :</strong></p>
+                    <blockquote>" . nl2br(htmlspecialchars($comment)) . "</blockquote>
+                    <p>Cordialement,<br>L'équipe ConfManager</p>
+                </body>
+                </html>
+            ";
+            
+            $headers = "MIME-Version: 1.0" . "\r\n";
+            $headers .= "Content-type:text/html;charset=UTF-8" . "\r\n";
+            $headers .= 'From: confmanager@univ-chlef.dz' . "\r\n";
+            
+            @mail($to, $subject, $message, $headers);
+        }
+        
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'Décision enregistrée et notification envoyée']);
+        
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        echo json_encode(['success' => false, 'message' => 'Erreur: ' . $e->getMessage()]);
+    }
+    exit;
+}
+
+// Fetch articles pending final decision (have 2 completed reviews but no final decision)
+$stmt = $pdo->prepare("
+    SELECT 
+        a.*,
+        c.name_fr as conference_name,
+        t.name as topic_name,
+        COUNT(r.id) as review_count
+    FROM articles a
+    JOIN conferences c ON a.conference_id = c.id
+    LEFT JOIN topics t ON a.topic_id = t.id
+    LEFT JOIN reviews r ON a.id = r.article_id
+    WHERE a.status = 'assigned' 
+    OR (a.status = 'review' AND a.final_decision IS NULL)
+    GROUP BY a.id
+    HAVING review_count >= 2
+    ORDER BY a.submission_date DESC
+");
+$stmt->execute();
+$pendingArticles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch completed decisions
+$stmt = $pdo->prepare("
+    SELECT 
+        a.*,
+        c.name_fr as conference_name,
+        u.first_name as decided_by_first,
+        u.last_name as decided_by_last
+    FROM articles a
+    JOIN conferences c ON a.conference_id = c.id
+    LEFT JOIN users u ON a.decided_by = u.id
+    WHERE a.final_decision IS NOT NULL
+    ORDER BY a.decision_date DESC
+");
+$stmt->execute();
+$completedDecisions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch reviews for each pending article
+$articleReviews = [];
+foreach ($pendingArticles as $article) {
+    $stmt = $pdo->prepare("
+        SELECT 
+            r.*,
+            u.first_name,
+            u.last_name,
+            u.grade
+        FROM reviews r
+        JOIN users u ON r.evaluator_id = u.id
+        WHERE r.article_id = ?
+        ORDER BY r.created_at DESC
+    ");
+    $stmt->execute([$article['id']]);
+    $articleReviews[$article['id']] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+// Stats
+$pendingCount = count($pendingArticles);
+$completedCount = count($completedDecisions);
+?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -435,11 +604,35 @@
     .nav-links { display: none; }
     .page { padding: 24px 16px; }
   }
+  
+  /* Toast notification */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--navy);
+    color: white;
+    padding: 14px 20px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    z-index: 300;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    animation: slideIn 0.3s ease;
+  }
+  .toast.show { display: flex; }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+  @keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
 </style>
 </head>
 <body>
 
-<!-- TOPBAR - EXACTLY AS PROVIDED -->
+<!-- TOPBAR -->
 <header class="topbar">
   <a class="brand" href="#">
     <div class="brand-icon">📋</div>
@@ -473,14 +666,14 @@
     <div class="stat-card">
       <div class="stat-icon pending"><i class="fas fa-hourglass-half"></i></div>
       <div>
-        <div class="stat-value" id="pendingCount">0</div>
+        <div class="stat-value" id="pendingCount"><?php echo $pendingCount; ?></div>
         <div class="stat-label">En attente de décision</div>
       </div>
     </div>
     <div class="stat-card">
       <div class="stat-icon completed"><i class="fas fa-check-circle"></i></div>
       <div>
-        <div class="stat-value" id="completedCount">0</div>
+        <div class="stat-value" id="completedCount"><?php echo $completedCount; ?></div>
         <div class="stat-label">Décisions prises</div>
       </div>
     </div>
@@ -499,9 +692,101 @@
           <th>Action</th>
         </tr>
       </thead>
-      <tbody id="decisionsTableBody"></tbody>
+      <tbody id="decisionsTableBody">
+        <?php if (empty($pendingArticles)): ?>
+          <tr>
+            <td colspan="6">
+              <div class="empty-state">
+                <i class="fas fa-check-circle"></i>
+                <h3>Toutes les décisions ont été prises</h3>
+                <p>Aucun article en attente de décision finale.</p>
+              </div>
+            </td>
+          </tr>
+        <?php else: ?>
+          <?php foreach ($pendingArticles as $article): 
+            $reviews = $articleReviews[$article['id']] ?? [];
+            $consensus = getConsensusRecommendation($reviews);
+          ?>
+            <tr data-article-id="<?php echo $article['id']; ?>">
+              <td>
+                <div class="article-title"><?php echo htmlspecialchars($article['title']); ?></div>
+                <div class="article-meta">
+                  <span><i class="fas fa-user"></i> <?php echo htmlspecialchars($article['author']); ?></span>
+                  <span class="tag"><?php echo htmlspecialchars($article['conference_name']); ?></span>
+                  <?php if ($article['topic_name']): ?>
+                    <span class="tag"><?php echo htmlspecialchars($article['topic_name']); ?></span>
+                  <?php endif; ?>
+                </div>
+              </td>
+              <td><?php echo htmlspecialchars($article['conference_name']); ?></td>
+              <td style="font-size:12px; color:var(--muted);">
+                <?php echo date('d/m/Y', strtotime($article['submission_date'])); ?>
+              </td>
+              <td>
+                <span class="review-recommendation rec-accept">
+                  <i class="fas fa-check-circle"></i> <?php echo count($reviews); ?>/2 reçues
+                </span>
+              </td>
+              <td>
+                <span class="review-recommendation <?php echo getRecommendationClass($consensus); ?>">
+                  <?php echo getRecommendationText($consensus); ?>
+                </span>
+              </td>
+              <td>
+                <button class="btn-decision" onclick="openDecisionModal(<?php echo $article['id']; ?>)">
+                  <i class="fas fa-gavel"></i> Décider
+                </button>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </tbody>
     </table>
   </div>
+  
+  <?php if (!empty($completedDecisions)): ?>
+  <h2 style="font-family: 'Libre Baskerville', serif; font-size: 24px; color: var(--navy); margin-bottom: 20px; margin-top: 40px;">
+    Décisions <em style="color: var(--gold);">passées</em>
+  </h2>
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Article</th>
+          <th>Conférence</th>
+          <th>Décision</th>
+          <th>Date</th>
+          <th>Par</th>
+        </tr>
+      </thead>
+      <tbody>
+        <?php foreach ($completedDecisions as $decision): ?>
+          <tr>
+            <td>
+              <div class="article-title"><?php echo htmlspecialchars($decision['title']); ?></div>
+              <div class="article-meta">
+                <span><?php echo htmlspecialchars($decision['author']); ?></span>
+              </div>
+            </td>
+            <td><?php echo htmlspecialchars($decision['conference_name']); ?></td>
+            <td>
+              <span class="review-recommendation <?php echo getDecisionClass($decision['final_decision']); ?>">
+                <?php echo getDecisionText($decision['final_decision']); ?>
+              </span>
+            </td>
+            <td style="font-size:12px; color:var(--muted);">
+              <?php echo $decision['decision_date'] ? date('d/m/Y', strtotime($decision['decision_date'])) : '-'; ?>
+            </td>
+            <td>
+              <?php echo htmlspecialchars(($decision['decided_by_first'] ?? '') . ' ' . ($decision['decided_by_last'] ?? '')); ?>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php endif; ?>
 </main>
 
 <footer class="footer">© 2026 ConfManager · Université Hassiba Benbouali de Chlef · Tous droits réservés</footer>
@@ -523,59 +808,17 @@
   </div>
 </div>
 
+<!-- Toast Notification -->
+<div id="toast" class="toast">
+  <i class="fas fa-check-circle"></i>
+  <span id="toastMessage"></span>
+</div>
+
 <script>
-  // WORKFLOW: 
-  // 1. User submits article
-  // 2. Manager sends to 2 reviewers
-  // 3. Reviewers evaluate → send back to Manager
-  // 4. Manager makes FINAL DECISION → article HIDES from this list
-
-  let articles = [
-    { 
-      id: 1, 
-      title: "Intelligence artificielle et apprentissage automatique dans l'enseignement supérieur", 
-      author: "Meziane Karima", 
-      authorEmail: "k.meziane@univ-oran.dz", 
-      conference: "ICSI 2025", 
-      submissionDate: "2025-03-10", 
-      status: "pending", // pending = waiting for manager decision
-      evaluations: [
-        { reviewer: "Dr. Boukhalfa Khaled", comment: "Excellent travail, méthodologie solide. Les résultats sont convaincants.", recommendation: "accept", date: "2025-03-20" },
-        { reviewer: "Pr. Sahraoui Rachid", comment: "Quelques corrections mineures à apporter, mais globalement très bon.", recommendation: "minor_revision", date: "2025-03-22" }
-      ]
-    },
-   
-    { 
-      id: 3, 
-      title: "Sécurité des systèmes IoT dans les villes intelligentes algériennes", 
-      author: "Hamidi Sofiane", 
-      authorEmail: "s.hamidi@univ-annaba.dz", 
-      conference: "STEM Forum 2025", 
-      submissionDate: "2025-05-03", 
-      status: "pending",
-      evaluations: [
-        { reviewer: "Dr. Yousfi Belkacem", comment: "Très bonne contribution. Les figures doivent être améliorées.", recommendation: "minor_revision", date: "2025-05-20" },
-        { reviewer: "Pr. Nouri Amira", comment: "La section sur les contre-mesures pourrait être développée.", recommendation: "major_revision", date: "2025-05-22" }
-      ]
-    },
-    { 
-      id: 4, 
-      title: "Énergies renouvelables et transition écologique en Algérie", 
-      author: "Ould-Ali Nadia", 
-      authorEmail: "n.ouldali@univ-setif.dz", 
-      conference: "GreenTech 2025", 
-      submissionDate: "2025-05-14", 
-      status: "pending",
-      evaluations: [
-        { reviewer: "Dr. Benali Karim", comment: "Fort taux de similarité, données non originales.", recommendation: "reject", date: "2025-05-25" },
-        { reviewer: "Pr. Hamdi Ahmed", comment: "Manque de rigueur méthodologique.", recommendation: "reject", date: "2025-05-26" }
-      ]
-    },
-    
-  ];
-
-  // Track completed decisions (articles hide after decision)
-  let completedDecisions = [];
+  // Article data from PHP
+  const articlesData = <?php echo json_encode($pendingArticles); ?>;
+  const reviewsData = <?php echo json_encode($articleReviews); ?>;
+  
   let currentArticleId = null;
   let selectedDecision = null;
 
@@ -600,14 +843,13 @@
   }
 
   function getConsensusRecommendation(evaluations) {
-    if (evaluations.length === 0) return null;
+    if (!evaluations || evaluations.length === 0) return null;
     
     const counts = {};
     evaluations.forEach(e => {
       counts[e.recommendation] = (counts[e.recommendation] || 0) + 1;
     });
     
-    // Priority: reject > major_revision > minor_revision > accept
     if (counts.reject >= 1) return 'reject';
     if (counts.major_revision >= 1) return 'major_revision';
     if (counts.minor_revision >= 2) return 'minor_revision';
@@ -615,88 +857,22 @@
     return 'minor_revision';
   }
 
-  function updateStats() {
-    const pending = articles.filter(a => a.status === 'pending').length;
-    const completed = completedDecisions.length;
-    
-    document.getElementById('pendingCount').textContent = pending;
-    document.getElementById('completedCount').textContent = completed;
-  }
-
-  function renderTable() {
-    // Only show pending articles (hide completed ones)
-    const pendingArticles = articles.filter(a => a.status === 'pending');
-    
-    if (pendingArticles.length === 0) {
-      document.getElementById('decisionsTableBody').innerHTML = `
-        <tr>
-          <td colspan="6">
-            <div class="empty-state">
-              <i class="fas fa-check-circle"></i>
-              <h3>Toutes les décisions ont été prises</h3>
-              <p>Aucun article en attente de décision finale.</p>
-            </div>
-          </td>
-        </tr>
-      `;
-      return;
-    }
-    
-    let html = '';
-    pendingArticles.forEach(article => {
-      const formattedDate = new Date(article.submissionDate).toLocaleDateString('fr-FR');
-      const evalCount = article.evaluations.length;
-      const consensus = getConsensusRecommendation(article.evaluations);
-      
-      html += `
-        <tr>
-          <td>
-            <div class="article-title">${article.title}</div>
-            <div class="article-meta">
-              <span><i class="fas fa-user"></i> ${article.author}</span>
-              <span class="tag">${article.conference}</span>
-            </div>
-           </td>
-           <td>${article.conference}</td>
-          <td style="font-size:12px; color:var(--muted);">${formattedDate}</td>
-          <td><span class="review-recommendation rec-accept"><i class="fas fa-check-circle"></i> ${evalCount}/2 reçues</span></td>
-          <td>
-            <span class="review-recommendation ${getRecommendationClass(consensus)}">
-              ${getRecommendationText(consensus)}
-            </span>
-          </td>
-          <td>
-            <button class="btn-decision" onclick="openDecisionModal(${article.id})">
-              <i class="fas fa-gavel"></i> Décider
-            </button>
-           </td>
-         </tr>
-      `;
-    });
-    
-    document.getElementById('decisionsTableBody').innerHTML = html;
-  }
-
-  function render() {
-    updateStats();
-    renderTable();
-  }
-
   function openDecisionModal(id) {
-    const article = articles.find(a => a.id === id);
+    const article = articlesData.find(a => a.id == id);
     if (!article) return;
     
+    const reviews = reviewsData[id] || [];
     currentArticleId = id;
     selectedDecision = null;
     
     // Build evaluations summary
     let evaluationsHtml = '';
-    article.evaluations.forEach(review => {
+    reviews.forEach(review => {
       evaluationsHtml += `
         <div class="review-card">
           <div class="review-header">
-            <span><i class="fas fa-user-check"></i> ${review.reviewer}</span>
-            <span style="font-size:10px; color:var(--muted);">${review.date}</span>
+            <span><i class="fas fa-user-check"></i> ${review.first_name} ${review.last_name}${review.grade ? ' (' + review.grade + ')' : ''}</span>
+            <span style="font-size:10px; color:var(--muted);">${new Date(review.created_at).toLocaleDateString('fr-FR')}</span>
           </div>
           <div class="review-comment">${review.comment}</div>
           <span class="review-recommendation ${getRecommendationClass(review.recommendation)}">
@@ -706,22 +882,22 @@
       `;
     });
     
-    const consensus = getConsensusRecommendation(article.evaluations);
+    const consensus = getConsensusRecommendation(reviews);
     
     let html = `
       <div class="article-detail-header">
         <div class="article-detail-title">${article.title}</div>
         <div class="article-detail-meta">
           <span><i class="fas fa-user"></i> ${article.author}</span>
-          <span><i class="fas fa-envelope"></i> ${article.authorEmail}</span>
-          <span><i class="fas fa-calendar"></i> Soumis le ${new Date(article.submissionDate).toLocaleDateString('fr-FR')}</span>
-          <span><i class="fas fa-building"></i> ${article.conference}</span>
+          <span><i class="fas fa-envelope"></i> ${article.author_email}</span>
+          <span><i class="fas fa-calendar"></i> Soumis le ${new Date(article.submission_date).toLocaleDateString('fr-FR')}</span>
+          <span><i class="fas fa-building"></i> ${article.conference_name}</span>
         </div>
       </div>
       
       <div class="info-card">
         <div class="info-card-title"><i class="fas fa-comments"></i> Évaluations des relecteurs</div>
-        ${evaluationsHtml}
+        ${evaluationsHtml || '<p style="color:var(--muted); font-size:13px;">Aucune évaluation disponible</p>'}
       </div>
       
       <div class="info-card" style="background:#fef9ed; border-color:var(--gold-light);">
@@ -731,7 +907,7 @@
             ${getRecommendationText(consensus)}
           </span>
           <div style="font-size:12px; color:var(--muted); margin-top:8px;">
-            Recommandation basée sur ${article.evaluations.length} évaluation(s)
+            Recommandation basée sur ${reviews.length} évaluation(s)
           </div>
         </div>
       </div>
@@ -761,7 +937,7 @@
           <label class="field-label">Commentaire à l'auteur</label>
           <textarea class="form-textarea" id="decisionComment" placeholder="Expliquez votre décision à l'auteur..."></textarea>
           <div style="font-size:11px; color:var(--muted); margin-top:4px;">
-            <i class="fas fa-envelope"></i> Ce message sera envoyé à ${article.authorEmail}
+            <i class="fas fa-envelope"></i> Ce message sera envoyé à ${article.author_email}
           </div>
         </div>
       </div>
@@ -777,44 +953,96 @@
     document.querySelector(`.decision-option.${decision === 'accepted' ? 'accept' : decision === 'revision' ? 'revision' : 'reject'}`).classList.add('selected');
   }
 
+  function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    toast.className = `toast ${type} show`;
+    toastMessage.textContent = message;
+    
+    setTimeout(() => {
+      toast.classList.remove('show');
+    }, 4000);
+  }
+
   function submitDecision() {
     if (!selectedDecision) {
-      alert('Veuillez sélectionner une décision.');
+      showToast('Veuillez sélectionner une décision.', 'error');
       return;
     }
     
     const comment = document.getElementById('decisionComment').value;
     if (!comment || comment.trim().length < 10) {
-      alert('Veuillez rédiger un commentaire pour l\'auteur (minimum 10 caractères).');
+      showToast('Veuillez rédiger un commentaire pour l\'auteur (minimum 10 caractères).', 'error');
       return;
     }
     
-    const article = articles.find(a => a.id === currentArticleId);
-    if (!article) return;
+    const submitBtn = document.getElementById('submitDecisionBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Envoi en cours...';
     
-    // Save completed decision
-    completedDecisions.push({
-      articleId: currentArticleId,
-      title: article.title,
-      author: article.author,
-      decision: selectedDecision,
-      comment: comment,
-      date: new Date().toISOString().split('T')[0]
+    // Send AJAX request
+    const formData = new FormData();
+    formData.append('action', 'submit_decision');
+    formData.append('article_id', currentArticleId);
+    formData.append('decision', selectedDecision);
+    formData.append('comment', comment);
+    
+    fetch('final_decisions.php', {
+      method: 'POST',
+      body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(data.message, 'success');
+        
+        // Remove article from table
+        const row = document.querySelector(`tr[data-article-id="${currentArticleId}"]`);
+        if (row) {
+          row.style.transition = 'all 0.3s';
+          row.style.opacity = '0';
+          row.style.transform = 'translateX(20px)';
+          setTimeout(() => row.remove(), 300);
+        }
+        
+        // Update stats
+        const pendingCount = document.getElementById('pendingCount');
+        pendingCount.textContent = parseInt(pendingCount.textContent) - 1;
+        
+        const completedCount = document.getElementById('completedCount');
+        completedCount.textContent = parseInt(completedCount.textContent) + 1;
+        
+        // Check if table is empty
+        const tbody = document.getElementById('decisionsTableBody');
+        if (tbody.children.length === 0 || tbody.querySelectorAll('tr').length === 0) {
+          setTimeout(() => {
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <i class="fas fa-check-circle"></i>
+                    <h3>Toutes les décisions ont été prises</h3>
+                    <p>Aucun article en attente de décision finale.</p>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }, 300);
+        }
+        
+        closeDecisionModal();
+      } else {
+        showToast(data.message, 'error');
+      }
+    })
+    .catch(error => {
+      showToast('Erreur de connexion. Veuillez réessayer.', 'error');
+      console.error('Error:', error);
+    })
+    .finally(() => {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Envoyer à l\'auteur';
     });
-    
-    // Mark article as decided (hide from list)
-    article.status = 'decided';
-    
-    const decisionTexts = {
-      accepted: 'accepté pour publication',
-      revision: 'soumis à révisions',
-      rejected: 'refusé'
-    };
-    
-    alert(`✅ Décision envoyée !\n\nL'article "${article.title}" a été ${decisionTexts[selectedDecision]}.\n\nUn email a été envoyé à ${article.author}.\n\nCet article n'apparaîtra plus dans cette liste.`);
-    
-    closeDecisionModal();
-    render();
   }
 
   function closeDecisionModal() {
@@ -826,42 +1054,23 @@
   // Search functionality
   document.getElementById('searchDecision').addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase();
-    if (term === '') {
-      renderTable();
-      return;
-    }
+    const rows = document.querySelectorAll('#decisionsTableBody tr[data-article-id]');
     
-    const pendingArticles = articles.filter(a => a.status === 'pending');
-    const filtered = pendingArticles.filter(a => 
-      a.title.toLowerCase().includes(term) || 
-      a.author.toLowerCase().includes(term) ||
-      a.conference.toLowerCase().includes(term)
-    );
-    
-    let html = '';
-    filtered.forEach(article => {
-      const formattedDate = new Date(article.submissionDate).toLocaleDateString('fr-FR');
-      const consensus = getConsensusRecommendation(article.evaluations);
-      
-      html += `
-        <tr>
-          <td>
-            <div class="article-title">${article.title}</div>
-            <div class="article-meta">
-              <span><i class="fas fa-user"></i> ${article.author}</span>
-              <span class="tag">${article.conference}</span>
-            </div>
-           </td>
-           <td>${article.conference}</td>
-          <td style="font-size:12px; color:var(--muted);">${formattedDate}</td>
-          <td><span class="review-recommendation rec-accept"><i class="fas fa-check-circle"></i> ${article.evaluations.length}/2 reçues</span></td>
-          <td><span class="review-recommendation ${getRecommendationClass(consensus)}">${getRecommendationText(consensus)}</span></td>
-          <td><button class="btn-decision" onclick="openDecisionModal(${article.id})"><i class="fas fa-gavel"></i> Décider</button></td>
-         </tr>
-      `;
+    rows.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      if (text.includes(term)) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
     });
-    
-    document.getElementById('decisionsTableBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding:40px;">Aucun résultat</td></tr>';
+  });
+
+  // Close modal on backdrop click
+  document.getElementById('decisionModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      closeDecisionModal();
+    }
   });
 
   // Expose global functions
@@ -869,9 +1078,62 @@
   window.selectDecision = selectDecision;
   window.submitDecision = submitDecision;
   window.closeDecisionModal = closeDecisionModal;
-
-  // Initial render
-  render();
 </script>
+
 </body>
 </html>
+<?php
+// PHP Helper Functions
+function getRecommendationText($rec) {
+    $texts = [
+        'accept' => 'Accepter',
+        'minor_revision' => 'Révisions mineures',
+        'major_revision' => 'Révisions majeures',
+        'reject' => 'Refuser'
+    ];
+    return $texts[$rec] ?? $rec;
+}
+
+function getRecommendationClass($rec) {
+    $classes = [
+        'accept' => 'rec-accept',
+        'minor_revision' => 'rec-minor',
+        'major_revision' => 'rec-major',
+        'reject' => 'rec-reject'
+    ];
+    return $classes[$rec] ?? 'rec-minor';
+}
+
+function getDecisionText($decision) {
+    $texts = [
+        'accepted' => 'Accepté',
+        'revision' => 'Révisions demandées',
+        'rejected' => 'Refusé'
+    ];
+    return $texts[$decision] ?? $decision;
+}
+
+function getDecisionClass($decision) {
+    $classes = [
+        'accepted' => 'rec-accept',
+        'revision' => 'rec-minor',
+        'rejected' => 'rec-reject'
+    ];
+    return $classes[$decision] ?? 'rec-minor';
+}
+
+function getConsensusRecommendation($evaluations) {
+    if (empty($evaluations)) return null;
+    
+    $counts = [];
+    foreach ($evaluations as $e) {
+        $counts[$e['recommendation']] = ($counts[$e['recommendation']] ?? 0) + 1;
+    }
+    
+    if (($counts['reject'] ?? 0) >= 1) return 'reject';
+    if (($counts['major_revision'] ?? 0) >= 1) return 'major_revision';
+    if (($counts['minor_revision'] ?? 0) >= 2) return 'minor_revision';
+    if (($counts['accept'] ?? 0) >= 1) return 'accept';
+    return 'minor_revision';
+}
+?>
