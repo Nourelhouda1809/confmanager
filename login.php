@@ -1,4 +1,5 @@
 <?php
+
 require_once 'config.php';
 
 $message = '';
@@ -325,7 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="login-container">
-        <a href="interface.html" class="back-link">
+        <a href="index.html" class="back-link">
             <i class="fas fa-arrow-left"></i> Retour à l'accueil
         </a>
 

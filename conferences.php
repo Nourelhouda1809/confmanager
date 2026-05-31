@@ -2,88 +2,11 @@
 // confmanager/conferences.php
 // Conference & Article Management System
 
-session_start();
+require_once 'config.php';
+requireRole('gestionnaire');
 
-// Database configuration
-$db_host = 'localhost';
-$db_name = 'confmanager';
-$db_user = 'root';
-$db_pass = '';
-
-try {
-    $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    die("Database connection failed: " . $e->getMessage());
-}
-
-// ==================== AUTHENTICATION CHECK ====================
-// DEBUG: Log session state
-error_log("DEBUG: Session user_id = " . (isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'NOT SET'));
-
-// For development: auto-set session if not present or invalid
-$session_user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-
-// If session user_id is 0 or not set, find a valid user from the database
-if ($session_user_id <= 0) {
-    try {
-        // Get the first gestionnaire user (preferably)
-        $user_check = $pdo->query("SELECT id, role FROM users WHERE role = 'gestionnaire' AND status = 'active' ORDER BY id ASC LIMIT 1");
-        $user_row = $user_check->fetch();
-
-        // If no gestionnaire, get any active user
-        if (!$user_row) {
-            $user_check = $pdo->query("SELECT id, role FROM users WHERE status = 'active' ORDER BY id ASC LIMIT 1");
-            $user_row = $user_check->fetch();
-        }
-
-        // If still no user, get ANY user
-        if (!$user_row) {
-            $user_check = $pdo->query("SELECT id, role FROM users ORDER BY id ASC LIMIT 1");
-            $user_row = $user_check->fetch();
-        }
-
-        if ($user_row) {
-            $_SESSION['user_id'] = intval($user_row['id']);
-            $_SESSION['role'] = $user_row['role'];
-            $session_user_id = intval($user_row['id']);
-            error_log("DEBUG: Auto-set user_id to " . $session_user_id);
-        }
-    } catch (PDOException $e) {
-        error_log("DEBUG: Error finding user: " . $e->getMessage());
-    }
-}
-
-// Final validation - ensure user exists in database
-$user_id = 1; // Default fallback
-$user_role = 'gestionnaire';
-
-try {
-    $check = $pdo->prepare("SELECT id, role FROM users WHERE id = ? LIMIT 1");
-    $check->execute([$session_user_id > 0 ? $session_user_id : 1]);
-    $user_row = $check->fetch();
-
-    if ($user_row) {
-        $user_id = intval($user_row['id']);
-        $user_role = $user_row['role'];
-        $_SESSION['user_id'] = $user_id;
-        $_SESSION['role'] = $user_role;
-    } else {
-        // User doesn't exist - use user 1 (Nourelhouda from your DB)
-        $user_id = 1;
-        $_SESSION['user_id'] = 1;
-        $_SESSION['role'] = 'gestionnaire';
-        error_log("DEBUG: User $session_user_id not found, using default user 1");
-    }
-} catch (PDOException $e) {
-    error_log("DEBUG: Database error: " . $e->getMessage());
-    $user_id = 1;
-    $_SESSION['user_id'] = 1;
-    $_SESSION['role'] = 'gestionnaire';
-}
-
-error_log("DEBUG: Final user_id = $user_id, role = $user_role");
+$user_id   = getCurrentUserId();
+$user_role = $_SESSION['user_role'];
 
 // ==================== AJAX HANDLERS ====================
 $action = $_POST['action'] ?? $_GET['action'] ?? '';
@@ -625,7 +548,7 @@ $articles_json = json_encode($articles);
   </a>
   <nav class="nav-links">
     <a href="conferences.php" class="nav-link active">Conferences & Articles</a>
-    <a href="evaluators.html" class="nav-link">Evaluators</a>
+    <a href="evaluators.php" class="nav-link">Evaluators</a>
     <a href="final_decisions.php" class="nav-link">Final Decision</a>
     <a href="profile.php" class="nav-link">Profile</a>
   </nav>

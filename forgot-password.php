@@ -1,8 +1,4 @@
-<?php
-// index.php - Page de demande de réinitialisation de mot de passe
-session_start();
-require_once 'config.php';
-?>
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>

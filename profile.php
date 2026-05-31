@@ -921,7 +921,7 @@ $role_label = match($user_role) {
   <nav class="nav-links">
     <?php if($user_role === 'gestionnaire'): ?>
       <a href="conferences.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'conferences.php' ? ' active' : ''; ?>">Conferences & Articles</a>
-      <a href="evaluators.html" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'evaluators.html' ? ' active' : ''; ?>">Evaluators</a>
+      <a href="evaluators.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'evaluators.php' ? ' active' : ''; ?>">Evaluators</a>
       <a href="final_decisions.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'final_decisions.php' ? ' active' : ''; ?>">Final Decision</a>
       <a href="profile.php" class="nav-link active">Profile</a>
     <?php elseif($user_role === 'reviewer'): ?>
@@ -930,7 +930,7 @@ $role_label = match($user_role) {
       <a href="base-articles.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'base-articles.php' ? ' active' : ''; ?>">Base d'articles</a>
       <a href="profile.php" class="nav-link active">Profil</a>
     <?php else: ?>
-      <a href="soumettre_article.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'soumettre_article.php' ? ' active' : ''; ?>">Soumettre un article</a>
+      <a href="submit_article.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'submit_article.php' ? ' active' : ''; ?>">Soumettre un article</a>
       <a href="mes_articles.php" class="nav-link<?php echo basename($_SERVER['PHP_SELF']) === 'mes_articles.php' ? ' active' : ''; ?>">Mes articles</a>
       <a href="profile.php" class="nav-link active">Profil</a>
     <?php endif; ?>

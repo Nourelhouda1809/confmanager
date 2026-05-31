@@ -1,22 +1,8 @@
 <?php
-session_start();
 require_once 'config.php';
+requireRole('gestionnaire');
 
-// Check if user is logged in and is a manager
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'gestionnaire') {
-    header('Location: login.php');
-    exit;
-}
-
-$user_id = $_SESSION['user_id'];
-
-// Database connection
-try {
-    $pdo = new PDO("mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch (PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
-}
+$user_id = getCurrentUserId();
 
 // Handle AJAX request to submit final decision
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_decision') {
@@ -640,7 +626,7 @@ $completedCount = count($completedDecisions);
   </a>
   <nav class="nav-links">
     <a href="conferences.php" class="nav-link">Conférences & Articles</a>
-    <a href="evaluators.html" class="nav-link">Évaluateurs</a>
+    <a href="evaluators.php" class="nav-link">Évaluateurs</a>
     <a href="final_decisions.php" class="nav-link active">Décisions finales</a>
     <a href="profile.php" class="nav-link">Profil</a>
   </nav>

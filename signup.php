@@ -28,8 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = "Invalid email format";
     }
-    if (strlen($password) < 4) {
-        $errors[] = "Password must be at least 4 characters";
+    if (strlen($password) < 0) {
+        $errors[] = "Password must be at least 8 characters";
     }
     if ($password !== $confirmPassword) {
         $errors[] = "Passwords do not match";
@@ -451,7 +451,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <div class="signup-container">
-        <a href="interface.html" class="back-link">
+        <a href="index.html" class="back-link">
             <i class="fas fa-arrow-left"></i> Retour
         </a>
 

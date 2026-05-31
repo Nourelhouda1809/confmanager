@@ -22,52 +22,30 @@
             <button class="search-clear" id="searchClear" type="button"><i class="fas fa-times"></i></button>
         </div>
         
-        <!-- FILTRES (Informatique, Médecine, etc.) -->
+        <!-- FILTRES (disciplines depuis la BDD) -->
         <div class="filters-container">
             <div class="filter-chip active" data-filter="all">Tous</div>
             <?php
-            // Récupérer les catégories depuis la base de données
-            require_once 'config/database.php';
-            $database = new Database();
-            $db = $database->getConnection();
-            
+            // FIX: use $pdo from config.php (not non-existent config/database.php)
+            // FIX: correct column is 'disciplines' (not 'categorie')
+            if (!isset($pdo)) require_once __DIR__ . '/config.php';
             try {
-                // Vérifier si la table conferences existe et a des données
-                $checkQuery = "SHOW TABLES LIKE 'conferences'";
-                $checkStmt = $db->prepare($checkQuery);
-                $checkStmt->execute();
-                
-                if ($checkStmt->rowCount() > 0) {
-                    $catQuery = "SELECT DISTINCT categorie FROM conferences WHERE categorie IS NOT NULL AND categorie != '' ORDER BY categorie";
-                    $catStmt = $db->prepare($catQuery);
-                    $catStmt->execute();
-                    $categories = $catStmt->fetchAll(PDO::FETCH_ASSOC);
-                    
-                    if (!empty($categories)) {
-                        foreach($categories as $cat) {
-                            $categorie = htmlspecialchars($cat['categorie']);
-                            echo "<div class='filter-chip' data-filter='".strtolower($categorie)."'>".$categorie."</div>";
-                        }
-                    } else {
-                        // Catégories par défaut si aucune en base
-                        $defaultCategories = ['Informatique', 'Médecine', 'Physique', 'Chimie', 'Biologie'];
-                        foreach($defaultCategories as $cat) {
-                            echo "<div class='filter-chip' data-filter='".strtolower($cat)."'>".$cat."</div>";
-                        }
+                $catStmt = $pdo->query("SELECT DISTINCT disciplines FROM conferences WHERE disciplines IS NOT NULL AND disciplines != '' ORDER BY disciplines");
+                $allDisciplines = $catStmt->fetchAll(PDO::FETCH_COLUMN);
+                // disciplines can be comma-separated e.g. "AI, NLP, CS"
+                $unique = [];
+                foreach ($allDisciplines as $d) {
+                    foreach (array_map('trim', explode(',', $d)) as $item) {
+                        if ($item !== '') $unique[$item] = true;
                     }
-                } else {
-                    // Table n'existe pas, utiliser catégories par défaut
-                    $defaultCategories = ['Informatique', 'Médecine', 'Physique', 'Chimie', 'Biologie'];
-                    foreach($defaultCategories as $cat) {
-                        echo "<div class='filter-chip' data-filter='".strtolower($cat)."'>".$cat."</div>";
-                    }
+                }
+                ksort($unique);
+                foreach (array_keys($unique) as $disc) {
+                    $safe = htmlspecialchars($disc, ENT_QUOTES, 'UTF-8');
+                    echo "<div class='filter-chip' data-filter='" . strtolower($safe) . "'>" . $safe . "</div>\n";
                 }
             } catch (PDOException $e) {
-                // En cas d'erreur, utiliser catégories par défaut
-                $defaultCategories = ['Informatique', 'Médecine', 'Physique', 'Chimie', 'Biologie'];
-                foreach($defaultCategories as $cat) {
-                    echo "<div class='filter-chip' data-filter='".strtolower($cat)."'>".$cat."</div>";
-                }
+                // silent fail — only "Tous" chip shown
             }
             ?>
         </div>
@@ -95,7 +73,6 @@
         </div>
     </div>
 </section>
-
 <style>
     /* === STYLES POUR LA SECTION RECHERCHE === */
     .search-section {
@@ -568,15 +545,15 @@ let searchQuery = '';
 let visibleItems = 4;
 let allConferences = [];
 
-// Données de démonstration (au cas où l'API ne fonctionne pas)
+// Données de démonstration (fallback si BDD inaccessible)
 const demoConferences = [
     {
         id: 1,
-        titre: "Conférence Internationale sur l'Intelligence Artificielle 2024",
+        titre: "Conférence Internationale sur l'Intelligence Artificielle",
         description: "Explorez les dernières avancées en IA et apprentissage automatique avec des experts mondiaux.",
-        lieu: "Paris, France",
-        date_debut: "2024-10-15",
-        date_fin: "2024-10-17",
+        lieu: "Oran, Algérie",
+        date_debut: "2026-09-15",
+        date_fin: "2026-09-17",
         image_url: "https://images.unsplash.com/photo-1591453089816-0fbb971b454c?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
         statut: "open",
         articles_count: 24,
@@ -584,67 +561,19 @@ const demoConferences = [
     },
     {
         id: 2,
-        titre: "Symposium sur les Maladies Infectieuses",
-        description: "Actualités et innovations dans le traitement des maladies infectieuses émergentes.",
-        lieu: "Lyon, France",
-        date_debut: "2024-11-05",
-        date_fin: "2024-11-07",
-        image_url: "https://images.unsplash.com/photo-1579684385127-1ef15d508118?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
+        titre: "Séminaire National sur la Cybersécurité",
+        description: "Actualités et innovations dans le domaine de la cybersécurité et des réseaux.",
+        lieu: "Chlef, Algérie",
+        date_debut: "2026-11-05",
+        date_fin: "2026-11-08",
+        image_url: "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
         statut: "soon",
         articles_count: 18,
-        categorie: "Médecine"
-    },
-    {
-        id: 3,
-        titre: "Congrès de Cardiologie Francophone",
-        description: "Les dernières recommandations et innovations en cardiologie.",
-        lieu: "Marseille, France",
-        date_debut: "2024-12-01",
-        date_fin: "2024-12-03",
-        image_url: "https://images.unsplash.com/photo-1631815588090-d4bfec5b1ccb?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-        statut: "call",
-        articles_count: 32,
-        categorie: "Médecine"
-    },
-    {
-        id: 4,
-        titre: "Journées Francophones de Recherche Biomédicale",
-        description: "Partage des dernières découvertes en recherche biomédicale.",
-        lieu: "Toulouse, France",
-        date_debut: "2025-01-15",
-        date_fin: "2025-01-17",
-        image_url: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-        statut: "planning",
-        articles_count: 0,
-        categorie: "Biologie"
-    },
-    {
-        id: 5,
-        titre: "Conférence Annuelle de Médecine Interne 2023",
-        description: "Revue des avancées majeures en médecine interne.",
-        lieu: "Bordeaux, France",
-        date_debut: "2023-03-12",
-        date_fin: "2023-03-14",
-        image_url: "https://images.unsplash.com/photo-1581056771107-24ca5f033842?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-        statut: "past",
-        articles_count: 45,
-        categorie: "Médecine"
-    },
-    {
-        id: 6,
-        titre: "Conférence sur la Physique Quantique",
-        description: "Avancées en physique quantique et applications.",
-        lieu: "Grenoble, France",
-        date_debut: "2023-09-18",
-        date_fin: "2023-09-20",
-        image_url: "https://images.unsplash.com/photo-1581595220892-b1f941f7c3e2?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80",
-        statut: "past",
-        articles_count: 27,
-        categorie: "Physique"
+        categorie: "Cybersecurity"
     }
 ];
 
-// Fonction pour charger les conférences depuis l'API
+// FIX: Fetch depuis conferences.php (action=get_conferences) — api/get_conferences.php n'existe pas
 async function loadConferences() {
     const spinner = document.getElementById('loadingSpinner');
     const grid = document.getElementById('conferencesGrid');
@@ -655,24 +584,75 @@ async function loadConferences() {
     if (noResults) noResults.style.display = 'none';
     
     try {
-        // Construire l'URL avec tous les paramètres
-        const url = `api/get_conferences.php?tab=${currentTab}&filter=${encodeURIComponent(currentFilter)}&search=${encodeURIComponent(searchQuery)}`;
-        console.log('Chargement depuis:', url); // Pour déboguer
+        const formData = new FormData();
+        formData.append('action', 'get_conferences');
         
-        const response = await fetch(url);
+        const response = await fetch('conferences.php', { method: 'POST', body: formData });
         const data = await response.json();
         
-        if (data.success) {
-            allConferences = data.data;
-            console.log('Conférences chargées:', allConferences); // Pour déboguer
+        if (data.success && data.data) {
+            const today = new Date().toISOString().split('T')[0];
+
+            // FIX: map real DB columns to the display names used in renderConferences
+            // DB columns: name_fr, name_en, location, start_date, end_date,
+            //             submission_start_date, submission_deadline, disciplines, articles_count
+            let confs = data.data.map(c => {
+                // Compute statut from dates
+                let statut = 'planning';
+                if (c.end_date < today) {
+                    statut = 'past';
+                } else if (c.submission_start_date <= today && c.submission_deadline >= today) {
+                    statut = 'open';
+                } else if (c.submission_deadline < today) {
+                    statut = 'call';
+                } else {
+                    statut = 'soon';
+                }
+                return {
+                    id:            c.id,
+                    titre:         c.name_fr || c.name_en || 'Sans titre',
+                    description:   c.requirements || '',
+                    lieu:          c.location || 'Lieu non spécifié',
+                    date_debut:    c.start_date,
+                    date_fin:      c.end_date,
+                    image_url:     null,
+                    articles_count: parseInt(c.articles_count) || 0,
+                    categorie:     c.disciplines || '',
+                    statut:        statut
+                };
+            });
+
+            // Filter by tab (upcoming / past)
+            if (currentTab === 'upcoming') {
+                confs = confs.filter(c => c.statut !== 'past');
+            } else if (currentTab === 'past') {
+                confs = confs.filter(c => c.statut === 'past');
+            }
+
+            // Filter by discipline chip
+            if (currentFilter !== 'all') {
+                confs = confs.filter(c =>
+                    c.categorie && c.categorie.toLowerCase().split(',').map(s => s.trim()).some(d => d.includes(currentFilter.toLowerCase()))
+                );
+            }
+
+            // Filter by search query
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase();
+                confs = confs.filter(c =>
+                    (c.titre        && c.titre.toLowerCase().includes(q)) ||
+                    (c.lieu         && c.lieu.toLowerCase().includes(q))  ||
+                    (c.description  && c.description.toLowerCase().includes(q)) ||
+                    (c.categorie    && c.categorie.toLowerCase().includes(q))
+                );
+            }
+
+            allConferences = confs;
         } else {
-            console.error('Erreur API:', data.message);
-            // Utiliser les données de démonstration et filtrer localement
             allConferences = filterDemoData();
         }
     } catch (error) {
-        console.error('Erreur de chargement, utilisation des données démo:', error);
-        // Utiliser les données de démonstration et filtrer localement
+        console.error('Erreur de chargement:', error);
         allConferences = filterDemoData();
     } finally {
         if (spinner) spinner.style.display = 'none';
@@ -681,38 +661,31 @@ async function loadConferences() {
     }
 }
 
-// Fonction pour filtrer les données de démonstration
+// Données de démonstration filtrées (fallback)
 function filterDemoData() {
     let filtered = [...demoConferences];
-    
-    // Filtrer par onglet (prochaines/passées)
     if (currentTab === 'upcoming') {
         filtered = filtered.filter(c => c.statut !== 'past');
     } else if (currentTab === 'past') {
         filtered = filtered.filter(c => c.statut === 'past');
     }
-    
-    // Filtrer par catégorie
     if (currentFilter !== 'all') {
-        filtered = filtered.filter(c => 
-            c.categorie && c.categorie.toLowerCase() === currentFilter.toLowerCase()
+        filtered = filtered.filter(c =>
+            c.categorie && c.categorie.toLowerCase().includes(currentFilter.toLowerCase())
         );
     }
-    
-    // Filtrer par recherche
     if (searchQuery.trim() !== '') {
         const query = searchQuery.toLowerCase().trim();
-        filtered = filtered.filter(c => 
-            (c.titre && c.titre.toLowerCase().includes(query)) ||
-            (c.description && c.description.toLowerCase().includes(query)) ||
-            (c.lieu && c.lieu.toLowerCase().includes(query))
+        filtered = filtered.filter(c =>
+            (c.titre        && c.titre.toLowerCase().includes(query)) ||
+            (c.description  && c.description.toLowerCase().includes(query)) ||
+            (c.lieu         && c.lieu.toLowerCase().includes(query))
         );
     }
-    
     return filtered;
 }
 
-// Fonction pour render les conférences
+// Render les conférences (design identique à l'original)
 function renderConferences(resetVisibility = true) {
     const grid = document.getElementById('conferencesGrid');
     const noResults = document.getElementById('noResults');
@@ -721,25 +694,20 @@ function renderConferences(resetVisibility = true) {
     
     if (!grid) return;
     
-    // Mettre à jour le compteur
     if (resultCountSpan) {
         resultCountSpan.textContent = allConferences.length;
     }
     
-    // Réinitialiser la visibilité si demandé
     if (resetVisibility) {
         visibleItems = 4;
     }
     
-    // Prendre seulement les éléments visibles
     const visibleData = allConferences.slice(0, visibleItems);
     
-    // Afficher ou masquer le bouton "Charger plus"
     if (loadMoreBtn) {
         loadMoreBtn.style.display = visibleItems < allConferences.length ? 'block' : 'none';
     }
     
-    // Afficher ou masquer le message "aucun résultat"
     if (allConferences.length === 0) {
         grid.innerHTML = '';
         if (noResults) noResults.style.display = 'block';
@@ -747,36 +715,21 @@ function renderConferences(resetVisibility = true) {
     } else {
         if (noResults) noResults.style.display = 'none';
         
-        // Générer le HTML des cartes
         grid.innerHTML = visibleData.map(conf => {
-            // Déterminer la classe du badge
             let badgeClass = 'planning';
             let badgeText = 'En préparation';
+            if (conf.statut === 'open')     { badgeClass = 'open';     badgeText = 'Inscriptions ouvertes'; }
+            else if (conf.statut === 'soon') { badgeClass = 'soon';     badgeText = 'Bientôt'; }
+            else if (conf.statut === 'call') { badgeClass = 'call';     badgeText = 'Appel à communications'; }
+            else if (conf.statut === 'past') { badgeClass = 'past';     badgeText = 'Terminée'; }
             
-            if (conf.statut === 'open') {
-                badgeClass = 'open';
-                badgeText = 'Inscriptions ouvertes';
-            } else if (conf.statut === 'soon') {
-                badgeClass = 'soon';
-                badgeText = 'Bientôt';
-            } else if (conf.statut === 'call') {
-                badgeClass = 'call';
-                badgeText = 'Appel à communications';
-            } else if (conf.statut === 'past') {
-                badgeClass = 'past';
-                badgeText = 'Terminée';
-            } else if (conf.statut === 'planning') {
-                badgeClass = 'planning';
-                badgeText = 'En préparation';
-            }
-            
-            // Formater la date
             const dateStr = formatDate(conf.date_debut, conf.date_fin);
+            const imgUrl = conf.image_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80';
             
             return `
                 <div class="conference-card">
                     <div class="card-image">
-                        <img src="${conf.image_url || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&q=80'}" alt="${conf.titre}" loading="lazy">
+                        <img src="${imgUrl}" alt="${conf.titre}" loading="lazy">
                         <div class="card-overlay"></div>
                         <span class="card-badge ${badgeClass}">${badgeText}</span>
                         <div class="card-date">
@@ -804,16 +757,13 @@ function renderConferences(resetVisibility = true) {
     }
 }
 
-// Fonction pour formater la date
+// Formater la date (identique à l'original)
 function formatDate(date_debut, date_fin) {
     if (!date_debut) return 'Date non spécifiée';
-    
     try {
         const options = { day: 'numeric', month: 'long', year: 'numeric' };
         const debut = new Date(date_debut);
-        
         if (isNaN(debut.getTime())) return 'Date non spécifiée';
-        
         if (date_fin) {
             const fin = new Date(date_fin);
             if (!isNaN(fin.getTime())) {
@@ -830,46 +780,31 @@ function formatDate(date_debut, date_fin) {
     }
 }
 
-// Fonction pour voir les détails d'une conférence
+// Voir détails conférence
 function viewConference(id) {
-    window.location.href = `conference_details.php?id=${id}`;
+    // FIX: conference_details.php n'existe pas — rediriger vers submit_article.php
+    window.location.href = `submit_article.php?conference_id=${id}`;
 }
 
-// Fonction pour changer d'onglet
 function switchTab(tab) {
     currentTab = tab;
-    
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        if (btn.dataset.tab === tab) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
+        btn.classList.toggle('active', btn.dataset.tab === tab);
     });
-    
     loadConferences();
 }
 
-// Fonction pour changer de filtre
 function switchFilter(filter) {
     currentFilter = filter;
-    
     document.querySelectorAll('.filter-chip').forEach(chip => {
-        if (chip.dataset.filter === filter) {
-            chip.classList.add('active');
-        } else {
-            chip.classList.remove('active');
-        }
+        chip.classList.toggle('active', chip.dataset.filter === filter);
     });
-    
     loadConferences();
 }
 
-// Fonction pour effacer la recherche
 function clearSearch() {
     const input = document.getElementById('searchInput');
     const clearBtn = document.getElementById('searchClear');
-    
     if (input) {
         input.value = '';
         searchQuery = '';
@@ -878,7 +813,6 @@ function clearSearch() {
     }
 }
 
-// Fonction pour charger plus
 function loadMore() {
     visibleItems += 4;
     renderConferences(false);
@@ -886,12 +820,8 @@ function loadMore() {
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM chargé, initialisation...');
-    
-    // Charger les conférences
     loadConferences();
     
-    // Search input
     const input = document.getElementById('searchInput');
     const clearBtn = document.getElementById('searchClear');
     
@@ -899,41 +829,23 @@ document.addEventListener('DOMContentLoaded', function() {
         let timeout = null;
         input.addEventListener('input', function() {
             searchQuery = this.value;
-            if (clearBtn) {
-                clearBtn.classList.toggle('visible', searchQuery.length > 0);
-            }
-            
+            if (clearBtn) clearBtn.classList.toggle('visible', searchQuery.length > 0);
             clearTimeout(timeout);
-            timeout = setTimeout(() => {
-                loadConferences();
-            }, 500);
+            timeout = setTimeout(() => loadConferences(), 500);
         });
     }
     
-    if (clearBtn) {
-        clearBtn.addEventListener('click', clearSearch);
-    }
+    if (clearBtn) clearBtn.addEventListener('click', clearSearch);
     
-    // Tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            switchTab(this.dataset.tab);
-        });
+        btn.addEventListener('click', function() { switchTab(this.dataset.tab); });
     });
     
-    // Filters - CORRECTION IMPORTANTE ICI
     document.querySelectorAll('.filter-chip').forEach(chip => {
-        chip.addEventListener('click', function() {
-            const filter = this.dataset.filter;
-            console.log('Filtre cliqué:', filter); // Pour déboguer
-            switchFilter(filter);
-        });
+        chip.addEventListener('click', function() { switchFilter(this.dataset.filter); });
     });
     
-    // Load More
     const loadMoreBtn = document.getElementById('loadMoreBtn');
-    if (loadMoreBtn) {
-        loadMoreBtn.addEventListener('click', loadMore);
-    }
+    if (loadMoreBtn) loadMoreBtn.addEventListener('click', loadMore);
 });
 </script>

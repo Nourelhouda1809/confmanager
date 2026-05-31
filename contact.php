@@ -378,7 +378,7 @@
 
 <main class="page">
   <!-- BACK BUTTON -->
-  <a href="interface.html" class="back-link">
+  <a href="index.html" class="back-link">
     <i class="fas fa-arrow-left"></i> Retour à l'accueil
   </a>
 
